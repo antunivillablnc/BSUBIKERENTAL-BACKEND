@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import formidable, { File as FormidableFile } from 'formidable';
+import formidable, { File as FormidableFile, Fields, Files } from 'formidable';
 import cloudinary from '../lib/cloudinary';
 
 const router = Router();
@@ -7,8 +7,8 @@ const router = Router();
 router.post('/', async (req, res) => {
   const form = formidable({ keepExtensions: true });
   try {
-    const { files } = await new Promise<{ files: formidable.Files }>((resolve, reject) => {
-      form.parse(req, (err: any, _fields: formidable.Fields, files: formidable.Files) => {
+    const { files } = await new Promise<{ files: Files }>((resolve, reject) => {
+      form.parse(req, (err: any, _fields: Fields, files: Files) => {
         if (err) reject(err);
         else resolve({ files });
       });
