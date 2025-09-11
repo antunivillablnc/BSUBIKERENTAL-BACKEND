@@ -7,7 +7,6 @@ coverage/
 *.tsbuildinfo
 
 # Environment files (never commit secrets)
-.env*
 .env
 .env.local
 *serviceAccount*.json
