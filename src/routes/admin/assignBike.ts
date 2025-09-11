@@ -21,10 +21,11 @@ router.post('/assign-bike', async (req, res) => {
     batch.update(db.collection('bikes').doc(bikeId), { status: 'rented' });
     await batch.commit();
     try {
+      const port = Number(process.env.EMAIL_PORT || 465);
       const transporter = nodemailer.createTransport({
         host: process.env.EMAIL_SERVER || 'smtp.gmail.com',
-        port: Number(process.env.EMAIL_PORT || 465),
-        secure: true,
+        port,
+        secure: port === 465,
         auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
         tls: { rejectUnauthorized: false },
       });
