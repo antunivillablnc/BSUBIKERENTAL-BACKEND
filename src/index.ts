@@ -12,10 +12,25 @@ import uploadRouter from './routes/upload';
 
 const app = express();
 
-app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',').map(s => s.trim()) || '*',
-  credentials: true,
-}));
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+const allowAll = allowedOrigins.includes('*');
+
+app.use(
+  cors({
+    origin: allowAll
+      ? true
+      : (origin, callback) => {
+          if (!origin) return callback(null, true);
+          callback(null, allowedOrigins.includes(origin));
+        },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (_req, res) => {
