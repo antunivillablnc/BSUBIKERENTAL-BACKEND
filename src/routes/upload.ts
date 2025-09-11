@@ -8,7 +8,7 @@ router.post('/', async (req, res) => {
   const form = formidable({ keepExtensions: true });
   try {
     const { files } = await new Promise<{ files: formidable.Files }>((resolve, reject) => {
-      form.parse(req, (err, _fields, files) => {
+      form.parse(req, (err: any, _fields: formidable.Fields, files: formidable.Files) => {
         if (err) reject(err);
         else resolve({ files });
       });
