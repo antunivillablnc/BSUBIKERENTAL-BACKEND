@@ -8,6 +8,8 @@ router.get('/bikes', async (_req, res) => {
     const bikeSnap = await db.collection('bikes').get();
     const bikes = await Promise.all(bikeSnap.docs.map(async d => {
       const bike: any = { id: d.id, ...d.data() };
+      const created = (bike as any).createdAt?.toDate?.() || (bike as any).createdAt;
+      if (created instanceof Date) bike.createdAt = created.toISOString();
       const appsSnap = await db.collection('applications').where('bikeId', '==', bike.id).get();
       const apps = appsSnap.docs.map(a => ({ id: a.id, ...a.data() }));
       apps.sort((a: any, b: any) => {

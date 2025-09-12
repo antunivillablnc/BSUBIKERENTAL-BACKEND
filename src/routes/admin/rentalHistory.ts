@@ -9,7 +9,11 @@ router.get('/rental-history', async (_req, res) => {
     const rentals = await Promise.all(rentalsSnap.docs.map(async d => {
       const r: any = { id: d.id, ...d.data() };
       const created = (r as any).createdAt?.toDate?.() || (r as any).createdAt;
+      const start = (r as any).startDate?.toDate?.() || (r as any).startDate;
+      const end = (r as any).endDate?.toDate?.() || (r as any).endDate;
       if (created instanceof Date) r.createdAt = created.toISOString();
+      if (start instanceof Date) r.startDate = start.toISOString();
+      if (end instanceof Date) r.endDate = end.toISOString();
       const userDoc = await db.collection('users').doc(r.userId).get();
       const bikeDoc = await db.collection('bikes').doc(r.bikeId).get();
       const appDoc = r.applicationId ? await db.collection('applications').doc(r.applicationId).get() : null;
