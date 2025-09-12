@@ -17,6 +17,10 @@ router.get('/', async (req, res) => {
       .get();
     const appDoc = appSnap.docs[0];
     const application: any = appDoc ? { id: appDoc.id, ...appDoc.data() } : null;
+    if (application) {
+      const created = (application as any).createdAt?.toDate?.() || (application as any).createdAt;
+      if (created instanceof Date) application.createdAt = created.toISOString();
+    }
     if (!application || !application.bikeId) return res.status(404).json({ success: false, error: 'No rented bike found for this user.' });
     const bikeDoc = await db.collection('bikes').doc(application.bikeId).get();
     const bike = bikeDoc.exists ? { id: bikeDoc.id, ...bikeDoc.data() } : null;

@@ -9,6 +9,8 @@ router.get('/applications', async (_req, res) => {
     const appsSnap = await db.collection('applications').orderBy('createdAt', 'desc').get();
     const applications = await Promise.all(appsSnap.docs.map(async d => {
       const app: any = { id: d.id, ...d.data() };
+      const created = (app as any).createdAt?.toDate?.() || (app as any).createdAt;
+      if (created instanceof Date) app.createdAt = created.toISOString();
       if (app.bikeId) {
         const bikeDoc = await db.collection('bikes').doc(app.bikeId).get();
         app.bike = bikeDoc.exists ? { id: bikeDoc.id, ...bikeDoc.data() } : null;
