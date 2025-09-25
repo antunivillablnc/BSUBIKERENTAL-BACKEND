@@ -12,7 +12,15 @@ router.get('/', async (req, res) => {
     const query = userId
       ? db.collection('applications').where('userId', '==', userId)
       : db.collection('applications').where('email', '==', email);
-    const appsSnap = await query.orderBy('createdAt', 'desc').get();
+
+    // Firestore may require a composite index for equality + orderBy. Try ordered query,
+    // but gracefully fall back to an unordered fetch and in-memory sort if not available.
+    let appsSnap: FirebaseFirestore.QuerySnapshot;
+    try {
+      appsSnap = await query.orderBy('createdAt', 'desc').get();
+    } catch (err: any) {
+      appsSnap = await query.get();
+    }
     const applications = await Promise.all(
       appsSnap.docs.map(async d => {
         const app: any = { id: d.id, ...d.data() };
@@ -30,6 +38,12 @@ router.get('/', async (req, res) => {
         return app;
       })
     );
+    // Ensure newest first even if we had to fall back without orderBy
+    applications.sort((a: any, b: any) => {
+      const ad = new Date(a.createdAt || 0).getTime();
+      const bd = new Date(b.createdAt || 0).getTime();
+      return bd - ad;
+    });
     res.json({ success: true, applications });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e?.message || 'Failed to load dashboard' });

@@ -42,6 +42,17 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    if(user.role === 'teaching_staff' && 'non_teaching_staff')
+    {
+      await db.collection('activityLogs').add({
+        type: 'Login',
+        adminName: user.name || '',
+        adminEmail: user.email,
+        description: 'Staff logged in',
+        createdAt: new Date(),
+      });
+    }
+
     return res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: user.role, name: user.name } });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || 'Login failed' });
