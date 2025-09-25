@@ -9,8 +9,14 @@ router.get('/applications', async (_req, res) => {
     const appsSnap = await db.collection('applications').orderBy('createdAt', 'desc').get();
     const applications = await Promise.all(appsSnap.docs.map(async d => {
       const app: any = { id: d.id, ...d.data() };
+      // Convert createdAt to ISO string
       const created = (app as any).createdAt?.toDate?.() || (app as any).createdAt;
       if (created instanceof Date) app.createdAt = created.toISOString();
+      
+      // Convert dateOfBirth to ISO string
+      const dateOfBirth = (app as any).dateOfBirth?.toDate?.() || (app as any).dateOfBirth;
+      if (dateOfBirth instanceof Date) app.dateOfBirth = dateOfBirth.toISOString();
+      
       if (app.bikeId) {
         const bikeDoc = await db.collection('bikes').doc(app.bikeId).get();
         app.bike = bikeDoc.exists ? { id: bikeDoc.id, ...bikeDoc.data() } : null;

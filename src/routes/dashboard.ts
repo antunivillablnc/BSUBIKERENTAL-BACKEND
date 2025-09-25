@@ -29,6 +29,13 @@ router.get('/', async (req, res) => {
         if (created instanceof Date) {
           (app as any).createdAt = created.toISOString();
         }
+        
+        // Normalize dateOfBirth to ISO string for frontend simplicity
+        const dateOfBirth = (app as any).dateOfBirth?.toDate?.() || (app as any).dateOfBirth;
+        if (dateOfBirth instanceof Date) {
+          (app as any).dateOfBirth = dateOfBirth.toISOString();
+        }
+        
         if (app.bikeId) {
           const bikeDoc = await db.collection('bikes').doc(app.bikeId).get();
           app.bike = bikeDoc.exists ? { id: bikeDoc.id, ...bikeDoc.data() } : null;
