@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "seed:reported-issues": "tsx src/seed/reportedIssues.ts",
+    "seed": "npm run seed:reported-issues"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -16,6 +18,7 @@
     "express": "^5.1.0",
     "firebase-admin": "^13.5.0",
     "formidable": "^3.5.4",
+    "jspdf": "^3.0.3",
     "nodemailer": "^6.9.14"
   },
   "devDependencies": {

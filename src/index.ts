@@ -9,6 +9,7 @@ import leaderboardRouter from './routes/leaderboard';
 import myBikeRouter from './routes/myBike';
 import adminSplitRouter from './routes/admin/index';
 import uploadRouter from './routes/upload';
+import reportedIssuesRouter from './routes/reportedIssues';
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use('/leaderboard', leaderboardRouter);
 app.use('/my-bike', myBikeRouter);
 app.use('/admin', adminSplitRouter);
 app.use('/upload-profile-photo', uploadRouter);
+app.use('/reported-issues', reportedIssuesRouter);
 
 const port = Number(process.env.PORT || 4000);
 app.listen(port, () => {
