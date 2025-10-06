@@ -61,10 +61,12 @@ router.post('/login', async (req, res) => {
     };
     if (process.env.COOKIE_DOMAIN) cookieBaseOptions.domain = process.env.COOKIE_DOMAIN;
 
-    res.cookie('auth', '1', cookieBaseOptions);
-    res.cookie('role', String(user.role), cookieBaseOptions);
+    const roleLower = String(user.role || '').toLowerCase();
 
-    return res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: user.role, name: user.name } });
+    res.cookie('auth', '1', cookieBaseOptions);
+    res.cookie('role', roleLower, cookieBaseOptions);
+
+    return res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: roleLower, name: user.name } });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || 'Login failed' });
   }
