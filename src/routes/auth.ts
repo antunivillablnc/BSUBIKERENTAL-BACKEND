@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import crypto from 'node:crypto';
 import { db } from '../lib/firebase';
+import { issueJwt, requireAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -55,7 +56,7 @@ router.post('/login', async (req, res) => {
 
     const cookieBaseOptions: any = {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
     };
@@ -63,8 +64,17 @@ router.post('/login', async (req, res) => {
 
     const roleLower = String(user.role || '').toLowerCase();
 
-    res.cookie('auth', '1', cookieBaseOptions);
+    const token = issueJwt({ id: String(user.id), email: String(user.email), role: roleLower }, 60 * 60 * 24 * 7);
+    res.cookie('auth', token, {
+      ...cookieBaseOptions,
+      // Explicitly mark as a signed JWT cookie token
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
     res.cookie('role', roleLower, cookieBaseOptions);
+
+    console.log('Setting cookies with options:', cookieBaseOptions);
+    console.log('Auth token set:', !!token);
+    console.log('Role set:', roleLower);
 
     return res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: roleLower, name: user.name } });
   } catch (e: any) {
@@ -92,6 +102,29 @@ router.post('/register', async (req, res) => {
     return res.json({ message: 'Registration successful' });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || 'Registration failed' });
+  }
+});
+
+// Logout route
+router.post('/logout', (req, res) => {
+  try {
+    // Clear the authentication cookies with the same options used to set them
+    const cookieBaseOptions: any = {
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    };
+    if (process.env.COOKIE_DOMAIN) cookieBaseOptions.domain = process.env.COOKIE_DOMAIN;
+
+    res.clearCookie('auth', cookieBaseOptions);
+    res.clearCookie('role', cookieBaseOptions);
+
+    console.log('Logout: Cookies cleared with options:', cookieBaseOptions);
+    return res.json({ message: 'Logout successful' });
+  } catch (e: any) {
+    console.log('Logout error:', e);
+    return res.status(500).json({ error: e?.message || 'Logout failed' });
   }
 });
 
@@ -172,8 +205,8 @@ export default router;
 router.post('/logout', async (_req, res) => {
   const cookieBaseOptions: any = {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: (process.env.COOKIE_SAMESITE as any) || 'lax',
+    secure: process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
     path: '/',
   };
   if (process.env.COOKIE_DOMAIN) cookieBaseOptions.domain = process.env.COOKIE_DOMAIN;
@@ -181,6 +214,11 @@ router.post('/logout', async (_req, res) => {
   res.clearCookie('auth', cookieBaseOptions);
   res.clearCookie('role', cookieBaseOptions);
   return res.json({ ok: true });
+});
+
+// Verify current session and return the decoded user
+router.get('/me', requireAuth, async (req, res) => {
+  return res.json({ user: req.user });
 });
 
 

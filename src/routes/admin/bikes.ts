@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { db } from '../../lib/firebase';
+import { requireAuth } from '../../middleware/auth';
 
 const router = Router();
 
-router.get('/bikes', async (_req, res) => {
+router.get('/bikes', requireAuth, async (_req, res) => {
   try {
     const bikeSnap = await db.collection('bikes').get();
     const bikes = await Promise.all(bikeSnap.docs.map(async d => {
@@ -31,7 +32,7 @@ router.get('/bikes', async (_req, res) => {
   }
 });
 
-router.post('/bikes', async (req, res) => {
+router.post('/bikes', requireAuth, async (req, res) => {
   try {
     const data = req.body || {};
     if (!data.name || typeof data.name !== 'string' || !data.name.trim()) return res.status(400).json({ success: false, error: 'Plate number is required.' });
@@ -46,7 +47,7 @@ router.post('/bikes', async (req, res) => {
   }
 });
 
-router.patch('/bikes', async (req, res) => {
+router.patch('/bikes', requireAuth, async (req, res) => {
   try {
     const { id, status } = req.body || {};
     if (!id || !status) return res.status(400).json({ success: false, error: 'Bike id and status are required.' });
@@ -74,7 +75,7 @@ router.patch('/bikes', async (req, res) => {
   }
 });
 
-router.delete('/bikes', async (req, res) => {
+router.delete('/bikes', requireAuth, async (req, res) => {
   try {
     const { id } = req.body || {};
     if (!id) return res.status(400).json({ success: false, error: 'Bike id is required.' });

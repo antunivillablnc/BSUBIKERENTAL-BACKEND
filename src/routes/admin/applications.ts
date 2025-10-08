@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { db } from '../../lib/firebase';
 import nodemailer from 'nodemailer';
+import { requireAuth } from '../../middleware/auth';
 
 const router = Router();
 
-router.get('/applications', async (_req, res) => {
+router.get('/applications', requireAuth, async (req, res) => {
   try {
     const appsSnap = await db.collection('applications').orderBy('createdAt', 'desc').get();
     const applications = await Promise.all(appsSnap.docs.map(async d => {
@@ -31,7 +32,7 @@ router.get('/applications', async (_req, res) => {
   }
 });
 
-router.post('/applications', async (req, res) => {
+router.post('/applications', requireAuth, async (req, res) => {
   try {
     const { applicationId, status } = req.body || {};
     const allowed = ['approved', 'rejected', 'pending'];

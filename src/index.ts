@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import authRouter from './routes/auth';
 import applicationRouter from './routes/application';
@@ -33,6 +34,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
@@ -44,7 +46,8 @@ app.use('/bikes', bikesRouter);
 app.use('/dashboard', dashboardRouter);
 app.use('/leaderboard', leaderboardRouter);
 app.use('/my-bike', myBikeRouter);
-app.use('/admin', adminSplitRouter);
+import { requireRole } from './middleware/auth';
+app.use('/admin', requireRole('admin', 'teaching_staff'), adminSplitRouter);
 app.use('/upload-profile-photo', uploadRouter);
 app.use('/reported-issues', reportedIssuesRouter);
 
