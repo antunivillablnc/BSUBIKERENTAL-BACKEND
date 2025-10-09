@@ -24,7 +24,7 @@ app.use(
   cors({
     origin: allowAll
       ? true
-      : (origin, callback) => {
+      : (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
           if (!origin) return callback(null, true);
           callback(null, allowedOrigins.includes(origin));
         },
