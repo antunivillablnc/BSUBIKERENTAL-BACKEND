@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../lib/firebase';
+import { db } from '../lib/firebase.js';
 
 const router = Router();
 
@@ -10,14 +10,14 @@ router.get('/', async (_req, res) => {
     try {
       const usersSnap = await db.collection('users').get();
       const users = usersSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as any))
-        .filter(u => (u.role || '').toLowerCase() !== 'admin');
+        .map((d: FirebaseFirestore.QueryDocumentSnapshot) => ({ id: d.id, ...(d.data() as any) }))
+        .filter((u: any) => (u.role || '').toLowerCase() !== 'admin');
       const existingSnap = await db.collection('leaderboard').select('userId').get();
-      const existingSet = new Set(existingSnap.docs.map(d => (d.data() as any).userId || ''));
-      const toCreate = users.filter(u => !existingSet.has(u.id));
+      const existingSet = new Set(existingSnap.docs.map((d: FirebaseFirestore.QueryDocumentSnapshot) => (d.data() as any).userId || ''));
+      const toCreate = users.filter((u: any) => !existingSet.has(u.id));
       if (toCreate.length) {
         const batch = db.batch();
-        toCreate.forEach(u => {
+        toCreate.forEach((u: any) => {
           const ref = db.collection('leaderboard').doc();
           batch.set(ref, {
             userId: u.id,
@@ -34,8 +34,8 @@ router.get('/', async (_req, res) => {
 
     const snap = await db.collection('leaderboard').orderBy('distanceKm', 'desc').get();
     const entries = snap.docs
-      .map(d => ({ id: d.id, ...d.data() } as any))
-      .sort((a, b) => {
+      .map((d: FirebaseFirestore.QueryDocumentSnapshot) => ({ id: d.id, ...(d.data() as any) }))
+      .sort((a: any, b: any) => {
         if (b.distanceKm !== a.distanceKm) return b.distanceKm - a.distanceKm;
         if (b.co2SavedKg !== a.co2SavedKg) return b.co2SavedKg - a.co2SavedKg;
         const ad = (a.createdAt?.toDate?.() ?? new Date(a.createdAt ?? 0)) as Date;

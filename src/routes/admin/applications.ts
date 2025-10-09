@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { db } from '../../lib/firebase';
+import { db } from '../../lib/firebase.js';
 import nodemailer from 'nodemailer';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth } from '../../middleware/auth.js';
 
 const router = Router();
 

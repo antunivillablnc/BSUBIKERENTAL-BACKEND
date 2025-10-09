@@ -2,8 +2,8 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import crypto from 'node:crypto';
-import { db } from '../lib/firebase';
-import { issueJwt, requireAuth } from '../middleware/auth';
+import { db } from '../lib/firebase.js';
+import { issueJwt, requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 

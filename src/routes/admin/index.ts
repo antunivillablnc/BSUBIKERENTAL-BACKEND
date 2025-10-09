@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import applicationsRouter from './applications';
-import bikesRouter from './bikes';
-import assignBikeRouter from './assignBike';
-import endRentalRouter from './endRental';
-import rentalHistoryRouter from './rentalHistory';
-import activityLogRouter from './activityLog';
-import usersRouter from './users';
+import applicationsRouter from './applications.js';
+import bikesRouter from './bikes.js';
+import assignBikeRouter from './assignBike.js';
+import endRentalRouter from './endRental.js';
+import rentalHistoryRouter from './rentalHistory.js';
+import activityLogRouter from './activityLog.js';
+import usersRouter from './users.js';
 
 const router = Router();
 

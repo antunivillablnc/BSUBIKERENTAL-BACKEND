@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../../lib/firebase';
+import { db } from '../../lib/firebase.js';
 import nodemailer from 'nodemailer';
 
 const router = Router();

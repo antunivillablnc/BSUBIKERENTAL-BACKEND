@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import formidable, { File as FormidableFile, Fields, Files } from 'formidable';
-import cloudinary from '../lib/cloudinary';
+import cloudinary from '../lib/cloudinary.js';
 
 const router = Router();
 

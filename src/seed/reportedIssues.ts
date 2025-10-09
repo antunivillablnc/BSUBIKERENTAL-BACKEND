@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { db } from '../lib/firebase';
+import { db } from '../lib/firebase.js';
 
 async function seedReportedIssues() {
   const existing = await db.collection('reported_issues').limit(1).get();
