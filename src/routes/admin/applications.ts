@@ -28,6 +28,7 @@ router.get('/applications', requireAuth, async (req, res) => {
     }));
     res.json({ success: true, applications });
   } catch (e: any) {
+    console.error('[admin/applications] load error:', e);
     res.status(500).json({ success: false, error: e?.message || 'Failed to load applications' });
   }
 });

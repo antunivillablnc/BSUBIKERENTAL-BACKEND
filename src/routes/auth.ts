@@ -12,17 +12,28 @@ router.post('/login', async (req, res) => {
     const { username, password, recaptchaToken } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
 
-    // Optional: verify reCAPTCHA server-side
-    if (process.env.RECAPTCHA_SECRET_KEY) {
+    // Only verify reCAPTCHA in production to avoid local timeouts
+    if (process.env.NODE_ENV === 'production' && process.env.RECAPTCHA_SECRET_KEY) {
       if (!recaptchaToken) return res.status(400).json({ error: 'Missing reCAPTCHA token' });
       const verifyBody = `secret=${encodeURIComponent(process.env.RECAPTCHA_SECRET_KEY)}&response=${encodeURIComponent(recaptchaToken)}`;
-      const verifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: verifyBody,
-      });
-      const verifyData = await verifyRes.json();
-      if (!verifyData?.success) return res.status(400).json({ error: 'reCAPTCHA verification failed' });
+
+      // Apply a 5s timeout to avoid long hangs
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const verifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: verifyBody,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const verifyData = await verifyRes.json();
+        if (!verifyData?.success) return res.status(400).json({ error: 'reCAPTCHA verification failed' });
+      } catch (e) {
+        clearTimeout(timeoutId);
+        return res.status(400).json({ error: 'reCAPTCHA verification failed (timeout)' });
+      }
     }
 
     const userSnap = await db.collection('users').where('email', '==', username).limit(1).get();
