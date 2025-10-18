@@ -14,7 +14,10 @@ router.post('/end-rental', async (req, res) => {
     const batch = db.batch();
     const startDate = application.assignedAt || application.createdAt;
     const histRef = db.collection('rentalHistory').doc();
-    batch.set(histRef, { applicationId: application.id, userId: application.userId, bikeId: application.bikeId, startDate, endDate: now, createdAt: new Date() });
+    const bikeDoc = await db.collection('bikes').doc(application.bikeId).get();
+    const bikeData: any = bikeDoc.exists ? { id: bikeDoc.id, ...bikeDoc.data() } : null;
+    const bikeName = bikeData?.name || null;
+    batch.set(histRef, { applicationId: application.id, userId: application.userId, bikeId: application.bikeId, bikeName, startDate, endDate: now, createdAt: new Date() });
     batch.update(db.collection('applications').doc(application.id), { bikeId: null, status: 'completed' });
     batch.update(db.collection('bikes').doc(application.bikeId), { status: 'available' });
     await batch.commit();
