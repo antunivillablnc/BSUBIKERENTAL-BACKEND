@@ -108,6 +108,34 @@ router.patch('/', requireRole('admin', 'teaching_staff'), async (req, res) => {
   else if (typeof resolvedAt === 'string') update.resolvedAt = new Date(resolvedAt);
 
   await db.collection('reported_issues').doc(id).update(update);
+  // Create in-app notification for reporter
+  try {
+    const docRef = db.collection('reported_issues').doc(String(id));
+    const snap = await docRef.get();
+    const data: any = snap.exists ? snap.data() : null;
+    const userEmail: string | undefined = data?.reportedBy;
+    const userId: string | undefined = data?.userId || undefined;
+    const subject: string = data?.subject || 'Reported issue';
+    const prettyStatus = String(update.status || data?.status || '').replace('_', ' ').toUpperCase();
+    const notes = typeof update.adminNotes === 'string' ? update.adminNotes : data?.adminNotes || '';
+    if (userEmail) {
+      await db.collection('notifications').add({
+        userEmail,
+        userId: userId || null,
+        type: 'issue_update',
+        title: 'Issue Update',
+        message: `Your issue "${subject}" is now ${prettyStatus}. ${notes ? 'Notes: '+notes : ''}`.trim(),
+        status: update.status || data?.status || 'updated',
+        metadata: { issueId: id, subject, notes },
+        createdAt: new Date(),
+        read: false,
+      });
+    }
+  } catch (e) {
+    console.error('Failed to create issue notification:', e);
+  }
+  // Email notification removed
+
   res.json({ success: true });
 });
 
