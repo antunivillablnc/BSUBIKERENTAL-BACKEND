@@ -9,6 +9,7 @@ import dashboardRouter from './routes/dashboard.js';
 import leaderboardRouter from './routes/leaderboard.js';
 import adminSplitRouter from './routes/admin/index.js';
 import uploadRouter from './routes/upload.js';
+import uploadIssueRouter from './routes/uploadIssue.js';
 import reportedIssuesRouter from './routes/reportedIssues.js';
 
 const app = express();
@@ -47,6 +48,7 @@ app.use('/leaderboard', leaderboardRouter);
 import { requireRole } from './middleware/auth.js';
 app.use('/admin', requireRole('admin', 'teaching_staff'), adminSplitRouter);
 app.use('/upload-profile-photo', uploadRouter);
+app.use('/upload-issue', uploadIssueRouter);
 app.use('/reported-issues', reportedIssuesRouter);
 
 const port = Number(process.env.PORT || 4000);
