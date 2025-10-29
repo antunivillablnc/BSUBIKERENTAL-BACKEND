@@ -40,12 +40,14 @@ const allowedStatuses = new Set(['open', 'in_progress', 'resolved', 'closed']);
 
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { subject, message, category, priority, imageUrl } = req.body || {};
+    const { subject, message, category, priority, imageUrl, bikeId, bikeName } = req.body || {};
 
     const normalizedSubject = typeof subject === 'string' ? subject.trim() : '';
     const normalizedMessage = typeof message === 'string' ? message.trim() : '';
     const normalizedCategory = typeof category === 'string' ? category : 'other';
     const normalizedPriority = typeof priority === 'string' ? priority : 'medium';
+    const normalizedBikeId = typeof bikeId === 'string' && bikeId.trim() ? bikeId.trim() : null;
+    const normalizedBikeName = typeof bikeName === 'string' && bikeName.trim() ? bikeName.trim() : null;
 
     if (!normalizedSubject) return res.status(400).json({ success: false, error: 'subject is required' });
     if (!normalizedMessage) return res.status(400).json({ success: false, error: 'message is required' });
@@ -67,6 +69,17 @@ router.post('/', requireAuth, async (req, res) => {
         }
       }
     } catch {}
+    // If bikeId not provided but bikeName is, resolve to Firestore bike id by name (case-insensitive)
+    let resolvedBikeId: string | null = normalizedBikeId;
+    if (!resolvedBikeId && normalizedBikeName) {
+      try {
+        const nameLower = normalizedBikeName.toLowerCase();
+        const bikesSnap = await db.collection('bikes').get();
+        const match = bikesSnap.docs.find(d => String((d.data() as any)?.name || '').toLowerCase().trim() === nameLower);
+        if (match) resolvedBikeId = match.id;
+      } catch {}
+    }
+
     const record = {
       subject: normalizedSubject,
       message: normalizedMessage,
@@ -80,6 +93,7 @@ router.post('/', requireAuth, async (req, res) => {
       assignedTo: null,
       resolvedAt: null,
       adminNotes: '',
+      bikeId: resolvedBikeId,
     } as const;
 
     const doc = await db.collection('reported_issues').add(record as any);
