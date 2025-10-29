@@ -52,36 +52,38 @@ router.post('/applications', requireAuth, async (req, res) => {
       description: `Set application ${applicationId} status to ${status}`,
       createdAt: new Date(),
     });
-    try {
-      const recipient = String(application.email || '').trim();
-      if (recipient) {
-        const port = Number(process.env.EMAIL_PORT || 465);
-        const transporter = nodemailer.createTransport({
-          host: process.env.EMAIL_SERVER || 'smtp.gmail.com',
-          port,
-          secure: port === 465,
-          auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-          tls: { rejectUnauthorized: false },
-        });
-        const subject = status === 'approved'
-          ? 'Your Bike Rental Application Has Been Approved'
-          : status === 'rejected'
-            ? 'Your Bike Rental Application Status'
-            : 'Your Bike Rental Application Status Updated';
-        const body = status === 'approved'
-          ? `<p>Your bike rental application has been <strong>approved</strong>.</p><p>We will contact you with next steps.</p>`
-          : status === 'rejected'
-            ? `<p>We’re sorry to inform you that your application was <strong>rejected</strong>.</p>`
-            : `<p>Your application status is now: <strong>${status}</strong>.</p>`;
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: recipient,
-          subject,
-          html: body,
-        });
+    if (process.env.ENABLE_SMTP_IN_BACKEND === 'true') {
+      try {
+        const recipient = String(application.email || '').trim();
+        if (recipient) {
+          const port = Number(process.env.EMAIL_PORT || 465);
+          const transporter = nodemailer.createTransport({
+            host: process.env.EMAIL_SERVER || 'smtp.gmail.com',
+            port,
+            secure: port === 465,
+            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+            tls: { rejectUnauthorized: false },
+          });
+          const subject = status === 'approved'
+            ? 'Your Bike Rental Application Has Been Approved'
+            : status === 'rejected'
+              ? 'Your Bike Rental Application Status'
+              : 'Your Bike Rental Application Status Updated';
+          const body = status === 'approved'
+            ? `<p>Your bike rental application has been <strong>approved</strong>.</p><p>We will contact you with next steps.</p>`
+            : status === 'rejected'
+              ? `<p>We’re sorry to inform you that your application was <strong>rejected</strong>.</p>`
+              : `<p>Your application status is now: <strong>${status}</strong>.</p>`;
+          await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: recipient,
+            subject,
+            html: body,
+          });
+        }
+      } catch (e) {
+        console.error('Failed to send status email:', e);
       }
-    } catch (e) {
-      console.error('Failed to send status email:', e);
     }
     res.json({ success: true });
   } catch (e: any) {
