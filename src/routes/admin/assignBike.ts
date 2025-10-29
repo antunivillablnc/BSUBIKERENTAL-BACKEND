@@ -20,6 +20,21 @@ router.post('/assign-bike', async (req, res) => {
     batch.update(db.collection('applications').doc(applicationId), { bikeId, status: 'assigned', assignedAt: new Date() });
     batch.update(db.collection('bikes').doc(bikeId), { status: 'rented' });
     await batch.commit();
+    // Trigger serverless email on frontend (Vercel) via secret
+    try {
+      const frontendBase = (process.env.FRONTEND_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/$/, '');
+      const secret = process.env.NOTIFY_API_SECRET || '';
+      if (frontendBase && secret) {
+        await fetch(`${frontendBase}/api/admin/assign-bike/notify`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${secret}`,
+          },
+          body: JSON.stringify({ applicationId, bikeId }),
+        });
+      }
+    } catch (e) { console.error('[notify] failed to trigger frontend email:', e); }
     if (process.env.ENABLE_SMTP_IN_BACKEND === 'true') {
       try {
         const port = Number(process.env.EMAIL_PORT || 465);

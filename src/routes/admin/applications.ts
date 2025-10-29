@@ -52,6 +52,23 @@ router.post('/applications', requireAuth, async (req, res) => {
       description: `Set application ${applicationId} status to ${status}`,
       createdAt: new Date(),
     });
+    // Trigger serverless email on frontend (Vercel) via secret, avoiding SMTP on Render free
+    try {
+      const frontendBase = (process.env.FRONTEND_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/$/, '');
+      const secret = process.env.NOTIFY_API_SECRET || '';
+      if (frontendBase && secret) {
+        await fetch(`${frontendBase}/api/admin/applications/notify`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${secret}`,
+          },
+          body: JSON.stringify({ applicationId, status }),
+        });
+      }
+    } catch (e) {
+      console.error('[notify] failed to trigger frontend email:', e);
+    }
     if (process.env.ENABLE_SMTP_IN_BACKEND === 'true') {
       try {
         const recipient = String(application.email || '').trim();
