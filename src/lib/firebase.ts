@@ -6,6 +6,7 @@ import fs from 'node:fs';
 
 const apps = getApps();
 let projectId = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT;
+const USE_MONGO = (process.env.DATA_STORE || '').toLowerCase() === 'mongo';
 
 // Fallback: derive projectId from ADC JSON if available
 if (!projectId && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
@@ -62,15 +63,15 @@ function buildCredential() {
   return applicationDefault();
 }
 
-export const firebaseApp = apps.length
-  ? apps[0]
-  : initializeApp({
-      credential: buildCredential(),
-      ...(projectId ? { projectId } : {}),
-      ...(process.env.FIREBASE_DATABASE_URL ? { databaseURL: process.env.FIREBASE_DATABASE_URL } : {}),
-    });
-
-const USE_MONGO = (process.env.DATA_STORE || '').toLowerCase() === 'mongo';
+export const firebaseApp = USE_MONGO
+  ? (undefined as any)
+  : (apps.length
+      ? apps[0]
+      : initializeApp({
+          credential: buildCredential(),
+          ...(projectId ? { projectId } : {}),
+          ...(process.env.FIREBASE_DATABASE_URL ? { databaseURL: process.env.FIREBASE_DATABASE_URL } : {}),
+        }));
 
 // --- Minimal Firestore-compat wrapper backed by MongoDB ---
 type OrderDir = 'asc' | 'desc' | undefined;
@@ -236,6 +237,8 @@ if (USE_MONGO) {
 }
 
 // Optional Realtime Database instance (URL can be omitted if default)
-export const rtdb = getDatabase(firebaseApp);
+export const rtdb = USE_MONGO
+  ? ({ ref: (_path: string) => ({ set: async (_value: any) => {} }) } as any)
+  : getDatabase(firebaseApp);
 
 

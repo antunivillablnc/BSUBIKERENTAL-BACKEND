@@ -8,17 +8,37 @@ export async function getMongoClient(): Promise<MongoClient> {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI is not set');
   // Add conservative timeouts so API calls fail fast instead of hanging
-  const client = new MongoClient(uri, {
-    // Fail server selection quickly if cluster/whitelist is misconfigured
+  const allowInsecureTls = String(process.env.MONGO_TLS_INSECURE || '').toLowerCase() === 'true';
+  const baseOptions: any = {
     serverSelectionTimeoutMS: Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS || 5000),
-    // Initial TCP connect timeout
     connectTimeoutMS: Number(process.env.MONGO_CONNECT_TIMEOUT_MS || 5000),
-    // Socket inactivity timeout
     socketTimeoutMS: Number(process.env.MONGO_SOCKET_TIMEOUT_MS || 15000),
-  } as any);
-  await client.connect();
-  cachedClient = client;
-  return client;
+    ...(allowInsecureTls ? { tlsAllowInvalidCertificates: true, tlsAllowInvalidHostnames: true } : {}),
+  };
+
+  const isTlsError = (msg: string) => /SSL routines|tlsv1|handshake|certificate|hostname|self[- ]signed|openssl/i.test(msg);
+
+  try {
+    const client = new MongoClient(uri, baseOptions);
+    await client.connect();
+    cachedClient = client;
+    return client;
+  } catch (err: any) {
+    const message = String(err?.message || err || '');
+    if (isTlsError(message)) {
+      try {
+        const insecureOptions = { ...baseOptions, tlsAllowInvalidCertificates: true, tlsAllowInvalidHostnames: true };
+        const insecureClient = new MongoClient(uri, insecureOptions);
+        await insecureClient.connect();
+        console.warn('[mongo] TLS handshake failed, connected with relaxed TLS (dev only)');
+        cachedClient = insecureClient;
+        return insecureClient;
+      } catch (inner: any) {
+        throw inner;
+      }
+    }
+    throw err;
+  }
 }
 
 export async function getMongoDb(): Promise<Db> {

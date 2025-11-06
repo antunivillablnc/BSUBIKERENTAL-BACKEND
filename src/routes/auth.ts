@@ -41,6 +41,9 @@ router.post('/login', async (req, res) => {
     const user: any = userDoc ? { id: userDoc.id, ...userDoc.data() } : null;
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
+    if (typeof user.password !== 'string' || !user.password) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
@@ -54,8 +57,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    if(user.role === 'teaching_staff' && 'non_teaching_staff')
-    {
+    if (user.role === 'teaching_staff' || user.role === 'non_teaching_staff') {
       await db.collection('activityLogs').add({
         type: 'Login',
         adminName: user.name || '',
@@ -89,7 +91,10 @@ router.post('/login', async (req, res) => {
 
     return res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: roleLower, name: user.name } });
   } catch (e: any) {
-    return res.status(500).json({ error: e?.message || 'Login failed' });
+    const message = String(e?.message || 'Login failed');
+    // Hide low-level TLS/OpenSSL noise that can happen on first Mongo connect
+    const isTlsNoise = /SSL routines|tlsv1 alert|openssl/i.test(message);
+    return res.status( isTlsNoise ? 503 : 500 ).json({ error: isTlsNoise ? 'Database connection failed' : message });
   }
 });
 
