@@ -75,7 +75,7 @@ router.post('/', requireAuth, async (req, res) => {
       try {
         const nameLower = normalizedBikeName.toLowerCase();
         const bikesSnap = await db.collection('bikes').get();
-        const match = bikesSnap.docs.find(d => String((d.data() as any)?.name || '').toLowerCase().trim() === nameLower);
+        const match = bikesSnap.docs.find((d: any) => String((d.data() as any)?.name || '').toLowerCase().trim() === nameLower);
         if (match) resolvedBikeId = match.id;
       } catch {}
     }

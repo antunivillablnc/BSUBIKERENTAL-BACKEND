@@ -26,7 +26,7 @@ router.post('/', async (req, res) => {
     const existingSnap = await db.collection('applications').where('userId', '==', userId).get();
     const existing = existingSnap.docs
       .map((d: any) => ({ id: d.id, ...(d.data() as any) }))
-      .find(a => ['pending', 'approved', 'active', 'assigned'].includes(String(a.status || '').toLowerCase()));
+      .find((a: any) => ['pending', 'approved', 'active', 'assigned'].includes(String(a.status || '').toLowerCase()));
     if (existing) return res.status(400).json({ success: false, error: 'You already have an active or pending rental application.' });
 
     // Ensure Cloudinary is configured
@@ -114,7 +114,7 @@ router.post('/staff', async (req, res) => {
     const existingSnap = await db.collection('applications').where('userId', '==', userId).get();
     const existing = existingSnap.docs
       .map((d: any) => ({ id: d.id, ...(d.data() as any) }))
-      .find(a => ['pending', 'approved', 'active', 'assigned'].includes(String(a.status || '').toLowerCase()));
+      .find((a: any) => ['pending', 'approved', 'active', 'assigned'].includes(String(a.status || '').toLowerCase()));
     if (existing) return res.status(400).json({ success: false, error: 'You already have an active or pending rental application.' });
 
     const lastName = getStr(b.lastName, true);
