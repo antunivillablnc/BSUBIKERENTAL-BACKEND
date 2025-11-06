@@ -1,5 +1,7 @@
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getDatabase } from 'firebase-admin/database';
+import { getMongoDb, maybeObjectId } from './mongo.js';
 import fs from 'node:fs';
 
 const apps = getApps();
@@ -65,8 +67,175 @@ export const firebaseApp = apps.length
   : initializeApp({
       credential: buildCredential(),
       ...(projectId ? { projectId } : {}),
+      ...(process.env.FIREBASE_DATABASE_URL ? { databaseURL: process.env.FIREBASE_DATABASE_URL } : {}),
     });
 
-export const db = getFirestore(firebaseApp);
+const USE_MONGO = (process.env.DATA_STORE || '').toLowerCase() === 'mongo';
+
+// --- Minimal Firestore-compat wrapper backed by MongoDB ---
+type OrderDir = 'asc' | 'desc' | undefined;
+
+function isObjectIdHex(id: string) {
+  return /^[a-fA-F0-9]{24}$/.test(id);
+}
+
+// ObjectId conversion is done lazily via dynamic import where needed
+
+class CompatDocSnapshot {
+  constructor(public id: string, private _data: any, public exists: boolean) {}
+  data() { return this._data; }
+}
+
+class CompatQuerySnapshot {
+  public empty: boolean;
+  public size: number;
+  constructor(public docs: CompatDocSnapshot[]) {
+    this.size = docs.length;
+    this.empty = this.size === 0;
+  }
+}
+
+class CompatDocumentRef {
+  constructor(private collectionName: string, private id: string) {}
+
+  private async col() { return (await getMongoDb()).collection(this.collectionName); }
+
+  async get() {
+    const col = await this.col();
+    const key = isObjectIdHex(this.id) ? maybeObjectId(this.id) : this.id;
+    const doc = await col.findOne({ _id: key });
+    if (!doc) return new CompatDocSnapshot(this.id, undefined, false);
+    const { _id, ...rest } = doc as any;
+    return new CompatDocSnapshot(String(_id), rest, true);
+  }
+
+  async set(data: any, opts?: { merge?: boolean }) {
+    const col = await this.col();
+    const key = isObjectIdHex(this.id) ? maybeObjectId(this.id) : this.id;
+    if (opts?.merge) {
+      await col.updateOne({ _id: key }, { $set: data }, { upsert: true });
+    } else {
+      await col.replaceOne({ _id: key }, { ...data, _id: key }, { upsert: true });
+    }
+  }
+
+  async update(patch: Record<string, any>) {
+    const col = await this.col();
+    const key = isObjectIdHex(this.id) ? maybeObjectId(this.id) : this.id;
+    await col.updateOne({ _id: key }, { $set: patch });
+  }
+}
+
+class CompatQueryRef {
+  private _filter: Record<string, any> = {};
+  private _sort: Record<string, 1 | -1> = {};
+  private _limit = 0;
+
+  constructor(private collectionName: string) {}
+
+  private async col() { return (await getMongoDb()).collection(this.collectionName); }
+
+  where(field: string, op: any, value: any) {
+    if (op === '==') this._filter[field] = value;
+    else if (op === '>') this._filter[field] = { ...(this._filter[field] || {}), $gt: value };
+    else if (op === ">=") this._filter[field] = { ...(this._filter[field] || {}), $gte: value };
+    else if (op === '<') this._filter[field] = { ...(this._filter[field] || {}), $lt: value };
+    else if (op === '<=') this._filter[field] = { ...(this._filter[field] || {}), $lte: value };
+    return this;
+  }
+
+  orderBy(field: string, dir?: OrderDir) {
+    this._sort[field] = dir === 'desc' ? -1 : 1;
+    return this;
+  }
+
+  limit(n: number) { this._limit = n; return this; }
+
+  async get() {
+    const col = await this.col();
+    let cursor = col.find(this._filter);
+    if (Object.keys(this._sort).length) cursor = cursor.sort(this._sort);
+    if (this._limit > 0) cursor = cursor.limit(this._limit);
+    const docs = await cursor.toArray();
+    const mapped = docs.map((d: any) => {
+      const { _id, ...rest } = d;
+      return new CompatDocSnapshot(String(_id), rest, true);
+    });
+    return new CompatQuerySnapshot(mapped);
+  }
+
+  onSnapshot(cb: (snap: CompatQuerySnapshot) => void) {
+    const run = async () => {
+      try { cb(await this.get()); } catch {}
+    };
+    const id = setInterval(run, 3000);
+    run();
+    return () => clearInterval(id);
+  }
+}
+
+class CompatCollectionRef extends CompatQueryRef {
+  constructor(private _name: string) { super(_name); }
+
+  doc(id: string) { return new CompatDocumentRef(this._name, id); }
+
+  async add(data: any) {
+    const col = (await getMongoDb()).collection(this._name);
+    const res = await col.insertOne({ ...data });
+    return { id: String(res.insertedId) } as any;
+  }
+}
+
+class CompatWriteBatch {
+  private ops: any[] = [];
+  constructor() {}
+
+  set(ref: any, data: any, opts?: { merge?: boolean }) {
+    const collection = ref.collectionName || ref._name;
+    const id = ref.id;
+    if (opts?.merge) {
+      this.ops.push({ collection, op: 'updateOne', id, update: { $set: data }, upsert: true });
+    } else {
+      this.ops.push({ collection, op: 'replaceOne', id, replacement: { ...data }, upsert: true });
+    }
+  }
+
+  update(ref: any, patch: Record<string, any>) {
+    const collection = ref.collectionName || ref._name;
+    const id = ref.id;
+    this.ops.push({ collection, op: 'updateOne', id, update: { $set: patch } });
+  }
+
+  async commit() {
+    const db = await getMongoDb();
+    const grouped: Record<string, any[]> = {};
+    for (const op of this.ops) {
+      grouped[op.collection] = grouped[op.collection] || [];
+      const key = isObjectIdHex(op.id) ? maybeObjectId(op.id) : op.id;
+      if (op.op === 'updateOne') grouped[op.collection].push({ updateOne: { filter: { _id: key }, update: op.update, upsert: op.upsert } });
+      else if (op.op === 'replaceOne') grouped[op.collection].push({ replaceOne: { filter: { _id: key }, replacement: { ...op.replacement, _id: key }, upsert: op.upsert } });
+    }
+    for (const [name, ops] of Object.entries(grouped)) {
+      if (ops.length) await db.collection(name).bulkWrite(ops);
+    }
+  }
+}
+
+class MongoFirestoreCompatDb {
+  collection(name: string) {
+    const ref: any = new CompatCollectionRef(name);
+    (ref as any).collectionName = name; // for batch helpers
+    return ref;
+  }
+  batch() { return new CompatWriteBatch(); }
+}
+
+export const db: any = USE_MONGO ? new MongoFirestoreCompatDb() : getFirestore(firebaseApp);
+if (USE_MONGO) {
+  console.log('[db] Using Mongo Firestore-compat layer');
+}
+
+// Optional Realtime Database instance (URL can be omitted if default)
+export const rtdb = getDatabase(firebaseApp);
 
 

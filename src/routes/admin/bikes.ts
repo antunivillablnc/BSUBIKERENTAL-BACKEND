@@ -7,12 +7,12 @@ const router = Router();
 router.get('/bikes', requireAuth, async (_req, res) => {
   try {
     const bikeSnap = await db.collection('bikes').get();
-    const bikes = await Promise.all(bikeSnap.docs.map(async d => {
+    const bikes = await Promise.all(bikeSnap.docs.map(async (d: any) => {
       const bike: any = { id: d.id, ...d.data() };
       const created = (bike as any).createdAt?.toDate?.() || (bike as any).createdAt;
       if (created instanceof Date) bike.createdAt = created.toISOString();
       const appsSnap = await db.collection('applications').where('bikeId', '==', bike.id).get();
-      const apps = appsSnap.docs.map(a => ({ id: a.id, ...a.data() }));
+      const apps = appsSnap.docs.map((a: any) => ({ id: a.id, ...a.data() }));
       apps.sort((a: any, b: any) => {
         const ad = (a.createdAt?.toDate?.() ?? new Date(a.createdAt ?? 0)) as Date;
         const bd = (b.createdAt?.toDate?.() ?? new Date(b.createdAt ?? 0)) as Date;
@@ -53,7 +53,7 @@ router.patch('/bikes', requireAuth, async (req, res) => {
     if (!id || !status) return res.status(400).json({ success: false, error: 'Bike id and status are required.' });
     if (status === 'available') {
       const activeAppsSnap = await db.collection('applications').where('bikeId', '==', id).get();
-      const activeApps = activeAppsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+      const activeApps = activeAppsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
       if (activeApps.length > 0) {
         const now = new Date();
         for (const app of activeApps) {
@@ -62,7 +62,10 @@ router.patch('/bikes', requireAuth, async (req, res) => {
           }
         }
         const batch = db.batch();
-        activeAppsSnap.docs.forEach(doc => { batch.update(doc.ref, { bikeId: null, status: 'completed' }); });
+        activeAppsSnap.docs.forEach((doc: any) => {
+          const ref = db.collection('applications').doc(doc.id);
+          batch.update(ref as any, { bikeId: null, status: 'completed' });
+        });
         await batch.commit();
       }
     }

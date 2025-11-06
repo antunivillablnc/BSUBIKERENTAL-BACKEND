@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
+    
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.7.0",
     "cookie-parser": "^1.4.7",
@@ -23,6 +24,7 @@
     "formidable": "^3.5.4",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^3.0.3",
+    "mongodb": "^6.20.0",
     "nodemailer": "^6.9.14"
   },
   "devDependencies": {

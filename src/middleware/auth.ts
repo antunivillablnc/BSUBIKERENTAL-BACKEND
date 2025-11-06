@@ -8,7 +8,10 @@ export type JwtUserPayload = {
 };
 
 const getJwtSecret = (): string => {
-  const secret = process.env.JWT_SECRET;
+  // In development, allow a safe default to avoid 500s if env is missing
+  const fromEnv = process.env.JWT_SECRET;
+  const fallback = process.env.NODE_ENV !== 'production' ? 'dev-secret-change-me' : '';
+  const secret = fromEnv || fallback;
   if (!secret) {
     throw new Error('JWT_SECRET is not set');
   }

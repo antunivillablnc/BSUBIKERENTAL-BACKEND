@@ -56,8 +56,10 @@ router.post('/applications', requireAuth, async (req, res) => {
     try {
       const frontendBase = (process.env.FRONTEND_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/$/, '');
       const secret = process.env.NOTIFY_API_SECRET || '';
+      if (!frontendBase) console.warn('[notify] FRONTEND_BASE_URL missing; skipping notify call');
+      if (!secret) console.warn('[notify] NOTIFY_API_SECRET missing; skipping notify call');
       if (frontendBase && secret) {
-        await fetch(`${frontendBase}/api/admin/applications/notify`, {
+        const resp = await fetch(`${frontendBase}/api/admin/applications/notify`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -65,6 +67,12 @@ router.post('/applications', requireAuth, async (req, res) => {
           },
           body: JSON.stringify({ applicationId, status }),
         });
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => '');
+          console.error('[notify] frontend responded', resp.status, text);
+        } else if (process.env.NOTIFY_DEBUG === 'true') {
+          console.log('[notify] applications notify success');
+        }
       }
     } catch (e) {
       console.error('[notify] failed to trigger frontend email:', e);

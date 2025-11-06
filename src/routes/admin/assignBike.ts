@@ -24,8 +24,10 @@ router.post('/assign-bike', async (req, res) => {
     try {
       const frontendBase = (process.env.FRONTEND_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/$/, '');
       const secret = process.env.NOTIFY_API_SECRET || '';
+      if (!frontendBase) console.warn('[notify] FRONTEND_BASE_URL missing; skipping notify call');
+      if (!secret) console.warn('[notify] NOTIFY_API_SECRET missing; skipping notify call');
       if (frontendBase && secret) {
-        await fetch(`${frontendBase}/api/admin/assign-bike/notify`, {
+        const resp = await fetch(`${frontendBase}/api/admin/assign-bike/notify`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -33,6 +35,12 @@ router.post('/assign-bike', async (req, res) => {
           },
           body: JSON.stringify({ applicationId, bikeId }),
         });
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => '');
+          console.error('[notify] frontend responded', resp.status, text);
+        } else if (process.env.NOTIFY_DEBUG === 'true') {
+          console.log('[notify] assign-bike notify success');
+        }
       }
     } catch (e) { console.error('[notify] failed to trigger frontend email:', e); }
     if (process.env.ENABLE_SMTP_IN_BACKEND === 'true') {
