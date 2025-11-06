@@ -6,7 +6,7 @@ const router = Router();
 
 router.get('/', requireRole('admin', 'teaching_staff'), async (_req, res) => {
   const snap = await db.collection('reported_issues').orderBy('reportedAt', 'desc').get();
-  const items = snap.docs.map(d => {
+  const items = snap.docs.map((d: any) => {
     const data = d.data() as any;
     const ra = data.reportedAt;
     const rza = data.resolvedAt;

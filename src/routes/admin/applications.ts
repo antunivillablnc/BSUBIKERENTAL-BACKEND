@@ -8,7 +8,7 @@ const router = Router();
 router.get('/applications', requireAuth, async (req, res) => {
   try {
     const appsSnap = await db.collection('applications').orderBy('createdAt', 'desc').get();
-    const applications = await Promise.all(appsSnap.docs.map(async d => {
+    const applications = await Promise.all(appsSnap.docs.map(async (d: any) => {
       const app: any = { id: d.id, ...d.data() };
       // Convert createdAt to ISO string
       const created = (app as any).createdAt?.toDate?.() || (app as any).createdAt;

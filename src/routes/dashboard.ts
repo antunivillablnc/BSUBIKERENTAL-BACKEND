@@ -15,14 +15,14 @@ router.get('/', async (req, res) => {
 
     // Firestore may require a composite index for equality + orderBy. Try ordered query,
     // but gracefully fall back to an unordered fetch and in-memory sort if not available.
-    let appsSnap: FirebaseFirestore.QuerySnapshot;
+    let appsSnap: any;
     try {
       appsSnap = await query.orderBy('createdAt', 'desc').get();
     } catch (err: any) {
       appsSnap = await query.get();
     }
     const applications = await Promise.all(
-      appsSnap.docs.map(async d => {
+      appsSnap.docs.map(async (d: any) => {
         const app: any = { id: d.id, ...d.data() };
         // Normalize createdAt to ISO string for frontend simplicity
         const created = (app as any).createdAt?.toDate?.() || (app as any).createdAt;
@@ -73,10 +73,10 @@ router.get('/stream', async (req, res) => {
       ? db.collection('applications').where('userId', '==', userId)
       : db.collection('applications').where('email', '==', email);
 
-    const unsubscribe = query.onSnapshot(async snap => {
+    const unsubscribe = query.onSnapshot(async (snap: any) => {
       try {
         const applications = await Promise.all(
-          snap.docs.map(async d => {
+          snap.docs.map(async (d: any) => {
             const app: any = { id: d.id, ...d.data() };
             const created = (app as any).createdAt?.toDate?.() || (app as any).createdAt;
             if (created instanceof Date) {

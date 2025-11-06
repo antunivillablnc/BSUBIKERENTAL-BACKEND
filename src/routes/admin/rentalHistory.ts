@@ -6,7 +6,7 @@ const router = Router();
 router.get('/rental-history', async (_req, res) => {
   try {
     const rentalsSnap = await db.collection('rentalHistory').orderBy('createdAt', 'desc').get();
-    const rentals = await Promise.all(rentalsSnap.docs.map(async d => {
+    const rentals = await Promise.all(rentalsSnap.docs.map(async (d: any) => {
       const r: any = { id: d.id, ...d.data() };
       const created = (r as any).createdAt?.toDate?.() || (r as any).createdAt;
       const start = (r as any).startDate?.toDate?.() || (r as any).startDate;
@@ -24,7 +24,7 @@ router.get('/rental-history', async (_req, res) => {
       return { ...r, bikeName, college, type: 'rental', status: 'Completed', user: userDoc.exists ? { id: userDoc.id, ...userDoc.data() } : null, bike: bikeDoc.exists ? { id: bikeDoc.id, ...bikeDoc.data() } : null, application: applicationOut };
     }));
     const rejSnap = await db.collection('applications').where('status', '==', 'rejected').get();
-    const mappedRejections = await Promise.all(rejSnap.docs.map(async aDoc => {
+    const mappedRejections = await Promise.all(rejSnap.docs.map(async (aDoc: any) => {
       const a: any = { id: aDoc.id, ...aDoc.data() };
       const created = (a as any).createdAt?.toDate?.() || (a as any).createdAt;
       const createdIso = created instanceof Date ? created.toISOString() : created;
@@ -33,7 +33,7 @@ router.get('/rental-history', async (_req, res) => {
       return { id: `rej-${a.id}`, startDate: null, endDate: null, createdAt: createdIso, college, user: userDoc.exists ? { id: userDoc.id, ...userDoc.data() } : null, bike: null, application: { id: a.id, firstName: a.firstName, lastName: a.lastName, email: a.email, college: (a as any)?.college ?? (a as any)?.department ?? null }, type: 'rejected', status: 'Rejected' };
     }));
     const progSnap = await db.collection('applications').where('status', 'in', ['approved', 'assigned', 'active']).get();
-    const mappedInProgress = await Promise.all(progSnap.docs.map(async aDoc => {
+    const mappedInProgress = await Promise.all(progSnap.docs.map(async (aDoc: any) => {
       const a: any = { id: aDoc.id, ...aDoc.data() };
       const created = (a as any).createdAt?.toDate?.() || (a as any).createdAt;
       const assigned = (a as any).assignedAt?.toDate?.() || (a as any).assignedAt;

@@ -25,7 +25,7 @@ router.post('/', async (req, res) => {
     }
     const existingSnap = await db.collection('applications').where('userId', '==', userId).get();
     const existing = existingSnap.docs
-      .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .map((d: any) => ({ id: d.id, ...(d.data() as any) }))
       .find(a => ['pending', 'approved', 'active', 'assigned'].includes(String(a.status || '').toLowerCase()));
     if (existing) return res.status(400).json({ success: false, error: 'You already have an active or pending rental application.' });
 
@@ -113,7 +113,7 @@ router.post('/staff', async (req, res) => {
     // Prevent multiple active/pending applications per user
     const existingSnap = await db.collection('applications').where('userId', '==', userId).get();
     const existing = existingSnap.docs
-      .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .map((d: any) => ({ id: d.id, ...(d.data() as any) }))
       .find(a => ['pending', 'approved', 'active', 'assigned'].includes(String(a.status || '').toLowerCase()));
     if (existing) return res.status(400).json({ success: false, error: 'You already have an active or pending rental application.' });
 

@@ -6,7 +6,7 @@ const router = Router();
 router.get('/users', async (_req, res) => {
   try {
     const snap = await db.collection('users').orderBy('createdAt', 'desc').get();
-    res.json({ success: true, users: snap.docs.map(d => ({ id: d.id, ...d.data() })) });
+    res.json({ success: true, users: snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e?.message || 'Failed to load users' });
   }
@@ -39,7 +39,7 @@ router.put('/users', async (req, res) => {
     const existingDoc = await db.collection('users').doc(id).get();
     if (!existingDoc.exists) return res.status(404).json({ success: false, error: 'User not found.' });
     const emailSnap = await db.collection('users').where('email', '==', email).get();
-    const emailTaken = emailSnap.docs.some(d => d.id !== id);
+    const emailTaken = emailSnap.docs.some((d: any) => d.id !== id);
     if (emailTaken) return res.status(400).json({ success: false, error: 'Email is already taken by another user.' });
     const bcrypt = await import('bcryptjs');
     const updateData: any = { email, name, role };

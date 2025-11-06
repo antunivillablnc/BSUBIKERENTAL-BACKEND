@@ -14,13 +14,13 @@ router.get('/', async (req, res) => {
       ? db.collection('notifications').where('userId', '==', userId)
       : db.collection('notifications').where('userEmail', '==', email);
 
-    let snap;
+    let snap: any;
     try {
       snap = await query.orderBy('createdAt', 'desc').limit(50).get();
     } catch {
       snap = await query.get();
     }
-    const rows = snap.docs.map(d => {
+    const rows = snap.docs.map((d: any) => {
       const data: any = d.data();
       const created = data?.createdAt?.toDate?.() || data?.createdAt;
       const createdAt = created instanceof Date ? created.toISOString() : created || null;
@@ -48,9 +48,9 @@ router.get('/stream', async (req, res) => {
       ? db.collection('notifications').where('userId', '==', userId)
       : db.collection('notifications').where('userEmail', '==', email);
 
-    const unsubscribe = query.onSnapshot(snap => {
+    const unsubscribe = query.onSnapshot((snap: any) => {
       try {
-        const items = snap.docs.map(d => {
+        const items = snap.docs.map((d: any) => {
           const data: any = d.data();
           const created = data?.createdAt?.toDate?.() || data?.createdAt;
           const createdAt = created instanceof Date ? created.toISOString() : created || null;

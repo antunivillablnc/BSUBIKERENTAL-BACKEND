@@ -309,6 +309,7 @@ async function trainXGBoost(
 > {
   try {
     // Dynamic import to avoid hard dependency if not installed
+    // @ts-ignore - optional dependency resolved at runtime if present
     const xgb: any = await import('xgboost');
 
     // Flatten helpers
@@ -462,6 +463,7 @@ router.post('/train', requireRole('admin', 'teaching_staff'), async (_req, res) 
       let yhatKm = 0;
       if (engineUsed === 'xgb' && boosterB64) {
         try {
+          // @ts-ignore - optional dependency resolved at runtime if present
           const xgb: any = await import('xgboost');
           const booster = await xgb.Booster.loadModel(Buffer.from(boosterB64, 'base64'));
           const drow = new xgb.DMatrix({ data: new Float32Array(featsStd), ncols: featsStd.length, nrows: 1 });
