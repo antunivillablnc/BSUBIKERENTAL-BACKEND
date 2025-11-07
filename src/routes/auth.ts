@@ -167,7 +167,7 @@ router.get('/register/verify', async (req, res) => {
     const regToken = createRegistrationToken(payload.email);
     const cookieBaseOptions: any = {
       httpOnly: true,
-      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
       maxAge: (Number(process.env.REG_TOKEN_TTL_MIN || 15)) * 60 * 1000,
