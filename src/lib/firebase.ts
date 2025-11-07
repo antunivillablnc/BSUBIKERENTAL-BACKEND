@@ -125,6 +125,12 @@ class CompatDocumentRef {
     const key = isObjectIdHex(this.id) ? maybeObjectId(this.id) : this.id;
     await col.updateOne({ _id: key }, { $set: patch });
   }
+
+  async delete() {
+    const col = await this.col();
+    const key = isObjectIdHex(this.id) ? maybeObjectId(this.id) : this.id;
+    await col.deleteOne({ _id: key });
+  }
 }
 
 class CompatQueryRef {
