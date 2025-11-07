@@ -44,8 +44,11 @@ export function renderBrandedEmail(opts: {
   bodyHtml?: string; // additional HTML under intro/CTA
   footerNote?: string;
 }) {
-  const appName = process.env.APP_NAME || 'University Bike Rental';
-  const { title, intro, ctaHref, ctaText, bodyHtml, footerNote } = opts || {} as any;
+  const appName = process.env.APP_NAME || 'SPARTA';
+  const baseFrontend = (process.env.FRONTEND_BASE_URL || '').replace(/\/$/, '');
+  const logoEnv = process.env.APP_LOGO_URL || '';
+  const logoUrl = logoEnv || (baseFrontend ? `${baseFrontend}/spartan_logo.png` : '');
+  const { title, intro, ctaHref, ctaText, bodyHtml, footerNote } = (opts || ({} as any));
   const buttonHtml = ctaHref && ctaText
     ? `<p style="margin:20px 0 24px 0; text-align:center;"><a href="${ctaHref}" style="display:inline-block;background:#FFD600;color:#222;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.08)">${ctaText}</a></p>`
     : '';
@@ -72,7 +75,7 @@ export function renderBrandedEmail(opts: {
     <body>
       <div class="container">
         <div class="card">
-          <div class="header"><div class="brand">${appName}</div></div>
+          <div class="header">${logoUrl ? `<img src="${logoUrl}" alt="${appName}" width="36" height="36" style="display:inline-block;border-radius:6px"/>` : ''}<div class="brand">${appName}</div></div>
           <div class="content">
             ${title ? `<h2 style="margin:0 0 12px 0">${title}</h2>` : ''}
             ${contentHtml}
