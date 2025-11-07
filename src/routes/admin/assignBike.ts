@@ -37,7 +37,7 @@ router.post('/assign-bike', async (req, res) => {
           to: recipient,
           subject: 'Your Bike Rental Application Has Been Accepted',
           text: `Good news! Your bike rental application has been accepted. The admin has assigned you bike ${bikeLabel}.`,
-          html: `<p>Good news! Your bike rental application has been <strong>accepted</strong>.</p><p>The admin has assigned you bike <strong>${bikeLabel}</strong>.</p><p>Please check your dashboard for next steps and pickup instructions.</p>`,
+          html: `<p>Good news! Your bike rental application has been <strong>accepted</strong>.</p><p>The admin has assigned you bike <strong>${bikeLabel}</strong>.</p><p>Please go to Sustainable Development Office for your next steps and pickup instructions.</p>`,
         });
       } else {
         if (process.env.NOTIFY_DEBUG === 'true') {
