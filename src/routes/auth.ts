@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import nodemailer from 'nodemailer';
+import { sendMail } from '../lib/mailer.js';
 import crypto from 'node:crypto';
 import { db } from '../lib/firebase.js';
 import { issueJwt, requireAuth } from '../middleware/auth.js';
@@ -164,26 +164,15 @@ router.post('/forgot-password', async (req, res) => {
     const baseUrl = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
     const resetLink = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${token}`;
 
-    if (process.env.ENABLE_SMTP_IN_BACKEND === 'true') {
-      const mailPort = Number(process.env.EMAIL_PORT || 465);
-      const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_SERVER || 'smtp.gmail.com',
-        port: mailPort,
-        secure: mailPort === 465,
-        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-        tls: { rejectUnauthorized: false },
+    try {
+      await sendMail({
+        to: user.email,
+        subject: 'Password Reset',
+        text: `Reset your password: ${resetLink}`,
+        html: `<p>Click the link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p>`,
       });
-      try {
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: user.email,
-          subject: 'Password Reset',
-          text: `Reset your password: ${resetLink}`,
-          html: `<p>Click the link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p>`,
-        });
-      } catch (e) {
-        console.error('Failed to send reset email:', e);
-      }
+    } catch (e) {
+      console.error('Failed to send reset email:', e);
     }
     return res.json({ message: 'If this email is registered, a reset link has been sent.' });
   } catch (e: any) {

@@ -13,6 +13,7 @@ import uploadIssueRouter from './routes/uploadIssue.js';
 import notificationsRouter from './routes/notifications.js';
 import reportedIssuesRouter from './routes/reportedIssues.js';
 import maintenanceRouter from './routes/maintenance.js';
+import resendWebhookRouter from './routes/webhooks/resend.js';
 
 const app = express();
 
@@ -54,6 +55,7 @@ app.use('/upload-issue', uploadIssueRouter);
 app.use('/notifications', notificationsRouter);
 app.use('/reported-issues', reportedIssuesRouter);
 app.use('/maintenance', requireRole('admin', 'teaching_staff'), maintenanceRouter);
+app.use('/webhooks/resend', resendWebhookRouter);
 
 const port = Number(process.env.PORT || 4000);
 app.listen(port, () => {

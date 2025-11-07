@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../../lib/firebase.js';
-import nodemailer from 'nodemailer';
+import { sendMail } from '../../lib/mailer.js';
 import { requireAuth } from '../../middleware/auth.js';
 
 const router = Router();
@@ -52,63 +52,37 @@ router.post('/applications', requireAuth, async (req, res) => {
       description: `Set application ${applicationId} status to ${status}`,
       createdAt: new Date(),
     });
-    // Trigger serverless email on frontend (Vercel) via secret, avoiding SMTP on Render free
+    // Send status email directly via Resend
     try {
-      const frontendBase = (process.env.FRONTEND_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/$/, '');
-      const secret = process.env.NOTIFY_API_SECRET || '';
-      if (!frontendBase) console.warn('[notify] FRONTEND_BASE_URL missing; skipping notify call');
-      if (!secret) console.warn('[notify] NOTIFY_API_SECRET missing; skipping notify call');
-      if (frontendBase && secret) {
-        const resp = await fetch(`${frontendBase}/api/admin/applications/notify`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${secret}`,
-          },
-          body: JSON.stringify({ applicationId, status }),
-        });
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => '');
-          console.error('[notify] frontend responded', resp.status, text);
-        } else if (process.env.NOTIFY_DEBUG === 'true') {
-          console.log('[notify] applications notify success');
+      let recipient = String(application.email || '').trim();
+      if (!recipient) {
+        // Fallback to user's email if application email missing
+        const userId = String((application as any).userId || '').trim();
+        if (userId) {
+          const userDoc = await db.collection('users').doc(userId).get();
+          const userData: any = userDoc.exists ? userDoc.data() : null;
+          if (userData?.email) recipient = String(userData.email).trim();
+        }
+      }
+      if (recipient) {
+        const subject = status === 'approved'
+          ? 'Your Bike Rental Application Has Been Approved'
+          : status === 'rejected'
+            ? 'Your Bike Rental Application Status'
+            : 'Your Bike Rental Application Status Updated';
+        const body = status === 'approved'
+          ? `<p>Your bike rental application has been <strong>approved</strong>.</p><p>We will contact you with next steps.</p>`
+          : status === 'rejected'
+            ? `<p>We’re sorry to inform you that your application was <strong>rejected</strong>.</p>`
+            : `<p>Your application status is now: <strong>${status}</strong>.</p>`;
+        await sendMail({ to: recipient, subject, html: body });
+      } else {
+        if (process.env.NOTIFY_DEBUG === 'true') {
+          console.warn('[applications] no recipient email for', applicationId);
         }
       }
     } catch (e) {
-      console.error('[notify] failed to trigger frontend email:', e);
-    }
-    if (process.env.ENABLE_SMTP_IN_BACKEND === 'true') {
-      try {
-        const recipient = String(application.email || '').trim();
-        if (recipient) {
-          const port = Number(process.env.EMAIL_PORT || 465);
-          const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_SERVER || 'smtp.gmail.com',
-            port,
-            secure: port === 465,
-            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-            tls: { rejectUnauthorized: false },
-          });
-          const subject = status === 'approved'
-            ? 'Your Bike Rental Application Has Been Approved'
-            : status === 'rejected'
-              ? 'Your Bike Rental Application Status'
-              : 'Your Bike Rental Application Status Updated';
-          const body = status === 'approved'
-            ? `<p>Your bike rental application has been <strong>approved</strong>.</p><p>We will contact you with next steps.</p>`
-            : status === 'rejected'
-              ? `<p>We’re sorry to inform you that your application was <strong>rejected</strong>.</p>`
-              : `<p>Your application status is now: <strong>${status}</strong>.</p>`;
-          await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: recipient,
-            subject,
-            html: body,
-          });
-        }
-      } catch (e) {
-        console.error('Failed to send status email:', e);
-      }
+      console.error('Failed to send status email:', e);
     }
     res.json({ success: true });
   } catch (e: any) {
