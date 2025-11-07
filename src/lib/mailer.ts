@@ -48,12 +48,17 @@ export function renderBrandedEmail(opts: {
   const baseFrontend = (process.env.FRONTEND_BASE_URL || '').replace(/\/$/, '');
   const logoEnv = process.env.APP_LOGO_URL || '';
   const logoUrl = logoEnv || (baseFrontend ? `${baseFrontend}/spartan_logo.png` : '');
+  const primary = process.env.THEME_PRIMARY || '#b22222';
+  const accent = process.env.THEME_ACCENT || '#FFD600';
+  const bg = process.env.THEME_BG || '#f6f7fb';
+  const text = process.env.THEME_TEXT || '#111';
+  const linkColor = process.env.THEME_LINK || '#1976d2';
   const { title, intro, ctaHref, ctaText, bodyHtml, footerNote } = (opts || ({} as any));
   const buttonHtml = ctaHref && ctaText
-    ? `<p style="margin:20px 0 24px 0; text-align:center;"><a href="${ctaHref}" style="display:inline-block;background:#FFD600;color:#222;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.08)">${ctaText}</a></p>`
+    ? `<p style="margin:20px 0 24px 0; text-align:center;"><a href="${ctaHref}" style="display:inline-block;background:${accent};color:#222;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,0.12)">${ctaText}</a></p>`
     : '';
   const fallbackHtml = ctaHref
-    ? `<p style="color:#555;font-size:14px;margin-top:0">If the button doesn’t work, copy and paste this URL into your browser:</p><p style="word-break:break-all;color:#1976d2">${ctaHref}</p>`
+    ? `<p style="color:#555;font-size:14px;margin-top:0">If the button doesn’t work, copy and paste this URL into your browser:</p><p style="word-break:break-all;color:${linkColor}">${ctaHref}</p>`
     : '';
   const contentHtml = `${intro ? `<p>${intro}</p>` : ''}${buttonHtml}${bodyHtml || ''}${fallbackHtml}`;
   return `<!DOCTYPE html>
@@ -63,21 +68,23 @@ export function renderBrandedEmail(opts: {
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>${title || appName}</title>
       <style>
-        body { margin:0; padding:0; background:#f6f7fb; font-family:Arial,Helvetica,sans-serif; color:#111; }
-        .container { max-width:600px; margin:24px auto; padding:0 16px; }
-        .card { background:#ffffff; border-radius:12px; box-shadow:0 4px 24px rgba(16,24,40,0.06); overflow:hidden; }
-        .header { padding:20px 24px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:12px; }
-        .brand { font-size:18px; font-weight:700; color:#b22222; letter-spacing:0.3px; }
+        body { margin:0; padding:0; background:${bg}; font-family:Arial,Helvetica,sans-serif; color:${text}; }
+        .container { max-width:640px; margin:24px auto; padding:0 16px; }
+        .card { background:#ffffff; border-radius:14px; box-shadow:0 8px 28px rgba(16,24,40,0.15); overflow:hidden; }
+        .header { padding:18px 24px; background:${primary}; display:flex; align-items:center; gap:12px; }
+        .brand { font-size:18px; font-weight:800; color:#ffffff; letter-spacing:0.4px; text-transform:uppercase; }
         .content { padding:24px; line-height:1.6; }
-        .footer { padding:16px 24px; color:#777; font-size:12px; border-top:1px solid #f0f0f0; }
+        .content h2 { color:${primary}; margin:0 0 12px 0; font-size:20px; }
+        .divider { height:1px; background:#eee; margin:8px 0 16px 0; }
+        .footer { padding:16px 24px; color:#777; font-size:12px; background:#fafafa; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="card">
-          <div class="header">${logoUrl ? `<img src="${logoUrl}" alt="${appName}" width="36" height="36" style="display:inline-block;border-radius:6px"/>` : ''}<div class="brand">${appName}</div></div>
+          <div class="header">${logoUrl ? `<img src="${logoUrl}" alt="${appName}" width="36" height="36" style="display:inline-block;border-radius:8px;background:#fff;padding:2px"/>` : ''}<div class="brand">${appName}</div></div>
           <div class="content">
-            ${title ? `<h2 style="margin:0 0 12px 0">${title}</h2>` : ''}
+            ${title ? `<h2>${title}</h2><div class="divider"></div>` : ''}
             ${contentHtml}
           </div>
           <div class="footer">${footerNote || appName}</div>
