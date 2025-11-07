@@ -219,6 +219,26 @@ router.post('/register/complete', async (req, res) => {
       emailVerified: true,
     });
 
+    // Send welcome/confirmation email
+    try {
+      const frontendBase = (process.env.FRONTEND_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+      const loginUrl = `${frontendBase}/`;
+      const html = renderBrandedEmail({
+        title: 'Registration complete',
+        intro: `Welcome to ${process.env.APP_NAME || 'SPARTA'}! Your email has been verified and your account is ready.`,
+        ctaHref: loginUrl,
+        ctaText: 'Log in',
+      });
+      await sendMail({
+        to: email,
+        subject: 'Welcome! Your registration is complete',
+        html,
+        text: `Your account is ready. Log in: ${loginUrl}`,
+      });
+    } catch (e) {
+      console.error('Failed to send registration confirmation email:', e);
+    }
+
     // Clear the short-lived token cookie
     const cookieBaseOptions: any = {
       httpOnly: true,
