@@ -77,10 +77,10 @@ export function renderBrandedEmail(opts: {
         .brand { font-size:18px; font-weight:800; color:#ffffff; letter-spacing:0.4px; text-transform:uppercase; }
         .tagline { margin-top:4px; font-size:12px; color:#fff; opacity:0.9; }
         .headerBar { height:4px; background-image:linear-gradient(90deg, ${accent} 0%, #ffc400 100%); }
-        .content { padding:24px; line-height:1.6; }
-        .content h2 { color:${primary}; margin:0 0 12px 0; font-size:20px; }
+        .content { padding:24px; line-height:1.6; text-align:center; }
+        .content h2 { color:${primary}; margin:0 0 12px 0; font-size:20px; text-align:center; }
         .divider { height:1px; background:#eee; margin:8px 0 16px 0; }
-        .panel { background:#fffdf3; border:1px solid #ffe58f; border-radius:10px; padding:16px; }
+        .panel { background:#fffdf3; border:1px solid #ffe58f; border-radius:10px; padding:16px; text-align:center; }
         .footer { padding:16px 24px; color:#777; font-size:12px; background:#fafafa; }
       </style>
     </head>
