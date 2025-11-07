@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { sendMail } from '../lib/mailer.js';
+import { createRegistrationToken, createVerifyEmailToken, verifyRegistrationToken, verifyVerifyEmailToken } from '../lib/tokens.js';
 import crypto from 'node:crypto';
 import { db } from '../lib/firebase.js';
 import { issueJwt, requireAuth } from '../middleware/auth.js';
@@ -118,6 +119,110 @@ router.post('/register', async (req, res) => {
     return res.json({ message: 'Registration successful' });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || 'Registration failed' });
+  }
+});
+
+// Magic-link pre-registration: send verification link
+router.post('/register/send-link', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    // If email already exists, return generic success to avoid enumeration
+    const existingSnap = await db.collection('users').where('email', '==', String(email)).limit(1).get();
+    if (!existingSnap.empty) {
+      return res.json({ message: 'If this email is valid, a verification link has been sent.' });
+    }
+
+    const token = createVerifyEmailToken(String(email));
+    const base = (process.env.API_BASE_URL || process.env.APP_URL || 'http://localhost:4000').replace(/\/$/, '');
+    const verifyUrl = `${base}/auth/register/verify?token=${encodeURIComponent(token)}`;
+
+    try {
+      await sendMail({
+        to: String(email),
+        subject: `Verify your ${(process.env.APP_NAME || 'account')} email`,
+        html: `<p>Click the link to verify your email and continue registration:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p><p>This link expires in ${(process.env.VERIFY_TOKEN_TTL_MIN || '15')} minutes.</p>`,
+        text: `Verify your email: ${verifyUrl}`,
+      });
+    } catch (e) {
+      console.error('Failed to send verification email:', e);
+      // Still return generic success to not leak existence/state
+    }
+
+    return res.json({ message: 'If this email is valid, a verification link has been sent.' });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'Failed to send verification link' });
+  }
+});
+
+// Magic-link verify endpoint: exchanges email token for short-lived registration token cookie
+router.get('/register/verify', async (req, res) => {
+  try {
+    const token = String(req.query.token || '');
+    if (!token) return res.status(400).send('Missing token');
+    const payload = verifyVerifyEmailToken(token);
+    if (payload.purpose !== 'register-verify') return res.status(400).send('Invalid token');
+
+    const regToken = createRegistrationToken(payload.email);
+    const cookieBaseOptions: any = {
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: (Number(process.env.REG_TOKEN_TTL_MIN || 15)) * 60 * 1000,
+    };
+    if (process.env.COOKIE_DOMAIN) cookieBaseOptions.domain = process.env.COOKIE_DOMAIN;
+
+    res.cookie('registrationToken', regToken, cookieBaseOptions);
+
+    const frontend = (process.env.FRONTEND_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+    return res.redirect(`${frontend}/register/complete`);
+  } catch (e: any) {
+    return res.status(400).send('Invalid or expired token');
+  }
+});
+
+// Complete registration using short-lived registration token
+router.post('/register/complete', async (req, res) => {
+  try {
+    const token = (req.cookies && req.cookies.registrationToken) || String(req.body?.registrationToken || '');
+    const { name, password, role } = req.body || {};
+    if (!token) return res.status(400).json({ error: 'Missing registration token' });
+    if (!name || !password || !role) return res.status(400).json({ error: 'All fields are required' });
+
+    const payload = verifyRegistrationToken(token);
+    if (payload.purpose !== 'register-complete') return res.status(400).json({ error: 'Invalid token' });
+    const email = String(payload.email || '');
+
+    // Ensure not already registered (acts as uniqueness guard)
+    const existingSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+    if (!existingSnap.empty) return res.status(409).json({ error: 'Email already registered' });
+
+    const normalizedRole = String(role).toLowerCase();
+    const hashed = await bcrypt.hash(String(password), 10);
+    await db.collection('users').add({
+      name: String(name),
+      email,
+      password: hashed,
+      role: normalizedRole,
+      createdAt: new Date(),
+      emailVerified: true,
+    });
+
+    // Clear the short-lived token cookie
+    const cookieBaseOptions: any = {
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    };
+    if (process.env.COOKIE_DOMAIN) cookieBaseOptions.domain = process.env.COOKIE_DOMAIN;
+    res.clearCookie('registrationToken', cookieBaseOptions);
+
+    return res.json({ message: 'Registration successful' });
+  } catch (e: any) {
+    return res.status(400).json({ error: e?.message || 'Failed to complete registration' });
   }
 });
 
