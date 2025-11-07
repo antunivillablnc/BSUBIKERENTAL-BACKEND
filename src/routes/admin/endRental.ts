@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../../lib/firebase.js';
-import { sendMail } from '../../lib/mailer.js';
+import { sendMail, renderBrandedEmail } from '../../lib/mailer.js';
 
 const router = Router();
 
@@ -41,18 +41,17 @@ router.post('/end-rental', async (req, res) => {
         const startStr = start instanceof Date ? start.toLocaleString() : String(start);
         const endStr = end.toLocaleString();
         const bikeLabel = bikeName || application.bikeId;
+        const html = renderBrandedEmail({
+          title: 'Your bike rental has ended',
+          intro: 'Thanks for riding with us! Here are your session details:',
+          bodyHtml: `<p><strong>Bike:</strong> ${bikeLabel || 'N/A'}</p>
+                     <p><strong>Start:</strong> ${startStr}<br/><strong>End:</strong> ${endStr}</p>`,
+        });
         await sendMail({
           to: recipient,
           subject: 'Your Bike Rental Has Ended',
-          html: `<p>Your bike rental session has <strong>ended</strong>.</p>
-                 <p><strong>Bike:</strong> ${bikeLabel || 'N/A'}</p>
-                 <p><strong>Start:</strong> ${startStr}<br/><strong>End:</strong> ${endStr}</p>
-                 <p>Thank you for using the University Bike Rental.</p>`,
-          text: `Your bike rental session has ended.
-Bike: ${bikeLabel || 'N/A'}
-Start: ${startStr}
-End: ${endStr}
-Thank you for using the University Bike Rental.`,
+          html,
+          text: `Your bike rental session has ended. Bike: ${bikeLabel || 'N/A'} | Start: ${startStr} | End: ${endStr}`,
         });
       }
     } catch (e) {

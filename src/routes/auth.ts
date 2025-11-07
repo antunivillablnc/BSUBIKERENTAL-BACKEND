@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { sendMail } from '../lib/mailer.js';
+import { sendMail, renderBrandedEmail } from '../lib/mailer.js';
 import { createRegistrationToken, createVerifyEmailToken, verifyRegistrationToken, verifyVerifyEmailToken } from '../lib/tokens.js';
 import crypto from 'node:crypto';
 import { db } from '../lib/firebase.js';
@@ -139,11 +139,53 @@ router.post('/register/send-link', async (req, res) => {
     const verifyUrl = `${base}/auth/register/verify?token=${encodeURIComponent(token)}`;
 
     try {
+      const appName = process.env.APP_NAME || 'University Bike Rental';
+      const ttl = String(process.env.VERIFY_TOKEN_TTL_MIN || '15');
+      const html = `<!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Verify your email</title>
+          <style>
+            body { margin:0; padding:0; background:#f6f7fb; font-family:Arial,Helvetica,sans-serif; color:#111; }
+            .container { max-width:600px; margin:24px auto; padding:0 16px; }
+            .card { background:#ffffff; border-radius:12px; box-shadow:0 4px 24px rgba(16,24,40,0.06); overflow:hidden; }
+            .header { padding:20px 24px; border-bottom:1px solid #eee; display:flex; align-items:center; gap:12px; }
+            .brand { font-size:18px; font-weight:700; color:#b22222; letter-spacing:0.3px; }
+            .content { padding:24px; line-height:1.6; }
+            .btn { display:inline-block; background:#FFD600; color:#222; text-decoration:none; font-weight:700; padding:12px 20px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); }
+            .muted { color:#555; font-size:14px; }
+            .link { word-break:break-all; color:#1976d2; }
+            .footer { padding:16px 24px; color:#777; font-size:12px; border-top:1px solid #f0f0f0; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="card">
+              <div class="header">
+                <div class="brand">${appName}</div>
+              </div>
+              <div class="content">
+                <p>Confirm your email address to continue creating your account.</p>
+                <p style="margin:20px 0 24px 0; text-align:center;">
+                  <a class="btn" href="${verifyUrl}">Verify email</a>
+                </p>
+                <p class="muted">This link expires in ${ttl} minutes. If the button doesn’t work, copy and paste this URL into your browser:</p>
+                <p class="link">${verifyUrl}</p>
+                <p class="muted">If you didn’t request this, you can safely ignore this email.</p>
+              </div>
+              <div class="footer">${appName}</div>
+            </div>
+          </div>
+        </body>
+      </html>`;
+
       await sendMail({
         to: String(email),
-        subject: `Verify your ${(process.env.APP_NAME || 'account')} email`,
-        html: `<p>Click the link to verify your email and continue registration:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p><p>This link expires in ${(process.env.VERIFY_TOKEN_TTL_MIN || '15')} minutes.</p>`,
-        text: `Verify your email: ${verifyUrl}`,
+        subject: `Verify your ${appName} email`,
+        html,
+        text: `Verify your email to continue: ${verifyUrl} (expires in ${ttl} minutes)`,
       });
     } catch (e) {
       console.error('Failed to send verification email:', e);
@@ -270,11 +312,17 @@ router.post('/forgot-password', async (req, res) => {
     const resetLink = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${token}`;
 
     try {
+      const html = renderBrandedEmail({
+        title: 'Reset your password',
+        intro: 'Click the button below to create a new password.',
+        ctaHref: resetLink,
+        ctaText: 'Reset password',
+      });
       await sendMail({
         to: user.email,
         subject: 'Password Reset',
         text: `Reset your password: ${resetLink}`,
-        html: `<p>Click the link to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p>`,
+        html,
       });
     } catch (e) {
       console.error('Failed to send reset email:', e);

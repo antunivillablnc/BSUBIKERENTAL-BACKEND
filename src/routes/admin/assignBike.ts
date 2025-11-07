@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../../lib/firebase.js';
-import { sendMail } from '../../lib/mailer.js';
+import { sendMail, renderBrandedEmail } from '../../lib/mailer.js';
 
 const router = Router();
 
@@ -33,11 +33,16 @@ router.post('/assign-bike', async (req, res) => {
         }
       }
       if (recipient) {
+        const html = renderBrandedEmail({
+          title: 'Application approved',
+          intro: 'Good news! Your bike rental application has been accepted.',
+          bodyHtml: `<p>The admin has assigned you bike <strong>${bikeLabel}</strong>.</p><p>Please go to Sustainable Development Office for your next steps and pickup instructions.</p>`,
+        });
         await sendMail({
           to: recipient,
           subject: 'Your Bike Rental Application Has Been Accepted',
-          text: `Good news! Your bike rental application has been accepted. The admin has assigned you bike ${bikeLabel}.`,
-          html: `<p>Good news! Your bike rental application has been <strong>accepted</strong>.</p><p>The admin has assigned you bike <strong>${bikeLabel}</strong>.</p><p>Please go to Sustainable Development Office for your next steps and pickup instructions.</p>`,
+          text: `Good news! Your bike rental application has been accepted. Bike: ${bikeLabel}.`,
+          html,
         });
       } else {
         if (process.env.NOTIFY_DEBUG === 'true') {

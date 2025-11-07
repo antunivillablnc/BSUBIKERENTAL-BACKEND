@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../../lib/firebase.js';
-import { sendMail } from '../../lib/mailer.js';
+import { sendMail, renderBrandedEmail } from '../../lib/mailer.js';
 import { requireAuth } from '../../middleware/auth.js';
 
 const router = Router();
@@ -70,12 +70,13 @@ router.post('/applications', requireAuth, async (req, res) => {
           : status === 'rejected'
             ? 'Your Bike Rental Application Status'
             : 'Your Bike Rental Application Status Updated';
-        const body = status === 'approved'
+        const bodyHtml = status === 'approved'
           ? `<p>Your bike rental application has been <strong>approved</strong>.</p><p>We will contact you with next steps.</p>`
           : status === 'rejected'
             ? `<p>We’re sorry to inform you that your application was <strong>rejected</strong>.</p>`
             : `<p>Your application status is now: <strong>${status}</strong>.</p>`;
-        await sendMail({ to: recipient, subject, html: body });
+        const html = renderBrandedEmail({ title: 'Application status updated', bodyHtml });
+        await sendMail({ to: recipient, subject, html });
       } else {
         if (process.env.NOTIFY_DEBUG === 'true') {
           console.warn('[applications] no recipient email for', applicationId);
