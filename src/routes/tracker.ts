@@ -134,6 +134,7 @@ router.get('/diag', async (_req, res) => {
       env: {
         FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ? 'set' : 'missing',
         FIREBASE_DATABASE_URL: process.env.FIREBASE_DATABASE_URL || '(unset)',
+        IOT_SHARED_SECRET: (process.env.IOT_SHARED_SECRET || '').length ? 'set' : 'missing',
       },
     });
   } catch (e: any) {
