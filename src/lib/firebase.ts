@@ -242,9 +242,30 @@ if (USE_MONGO) {
   console.log('[db] Using Mongo Firestore-compat layer');
 }
 
-// Optional Realtime Database instance (URL can be omitted if default)
-export const rtdb = USE_MONGO
-  ? ({ ref: (_path: string) => ({ set: async (_value: any) => {} }) } as any)
-  : getDatabase(firebaseApp);
+// Optional Realtime Database instance (URL can be omitted if default).
+// Always attempt to use the real Firebase Admin RTDB even when DATA_STORE=mongo,
+// so we can keep IoT data in RTDB while app data lives in Mongo.
+export const rtdb = (() => {
+  try {
+    const appsNow = getApps();
+    const appForRtdb =
+      appsNow.length
+        ? appsNow[0]
+        : initializeApp({
+            credential: buildCredential(),
+            ...(projectId ? { projectId } : {}),
+            ...(process.env.FIREBASE_DATABASE_URL ? { databaseURL: process.env.FIREBASE_DATABASE_URL } : {}),
+          });
+    const db = getDatabase(appForRtdb);
+    try {
+      const canUpdate = typeof (db as any).ref === 'function' && typeof (db as any).ref('/').update === 'function';
+      console.log('[rtdb] initialized:', canUpdate ? 'admin' : 'limited');
+    } catch {}
+    return db;
+  } catch {
+    // Minimal shim to avoid crashes if credentials are missing in local dev
+    return ({ ref: (_path: string = '/') => ({ set: async (_value: any) => {}, update: async (_: any) => {} }) } as any);
+  }
+})();
 
 
