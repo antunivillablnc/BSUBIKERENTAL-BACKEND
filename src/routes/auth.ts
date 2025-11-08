@@ -4,6 +4,7 @@ import { sendMail, renderBrandedEmail } from '../lib/mailer.js';
 import { createRegistrationToken, createVerifyEmailToken, verifyRegistrationToken, verifyVerifyEmailToken } from '../lib/tokens.js';
 import crypto from 'node:crypto';
 import { db } from '../lib/firebase.js';
+import { validatePassword } from '../lib/password.js';
 import { issueJwt, requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -108,6 +109,9 @@ router.post('/register', async (req, res) => {
     const existingSnap = await db.collection('users').where('email', '==', email).limit(1).get();
     if (!existingSnap.empty) return res.status(409).json({ error: 'Email already registered' });
 
+    const policyErr = validatePassword(String(password));
+    if (policyErr) return res.status(400).json({ error: policyErr });
+
     const hashed = await bcrypt.hash(password, 10);
     await db.collection('users').add({
       name: fullName,
@@ -209,6 +213,8 @@ router.post('/register/complete', async (req, res) => {
     if (!existingSnap.empty) return res.status(409).json({ error: 'Email already registered' });
 
     const normalizedRole = String(role).toLowerCase();
+    const policyErr = validatePassword(String(password));
+    if (policyErr) return res.status(400).json({ error: policyErr });
     const hashed = await bcrypt.hash(String(password), 10);
     await db.collection('users').add({
       name: String(name),
@@ -333,6 +339,8 @@ router.post('/reset-password', async (req, res) => {
     if (!user || !expiry || new Date(expiry).getTime() < Date.now()) {
       return res.status(400).json({ error: 'Invalid or expired token' });
     }
+    const policyErr = validatePassword(String(password));
+    if (policyErr) return res.status(400).json({ error: policyErr });
     const hashed = await bcrypt.hash(String(password), 10);
     await db.collection('users').doc(user.id).update({
       password: hashed,
