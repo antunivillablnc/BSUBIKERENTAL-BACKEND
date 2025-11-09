@@ -4,6 +4,7 @@ import { requireRole } from '../middleware/auth.js';
 import * as tf from '@tensorflow/tfjs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { getMongoDb } from '../lib/mongo.js';
 
 type RideRow = {
   bike_name: string | null;
@@ -79,6 +80,46 @@ type Dataset = {
   featureNames: string[];
 };
 
+// Build dataset from Mongo 'maintenance_supervised' collection if MAINTENANCE_SOURCE=mongo_supervised
+async function buildDatasetFromMongoSupervised(): Promise<{ dataset: Dataset; latestByBike: Map<string, number[]>; bikesUsed: Set<string> }> {
+  const mdb = await getMongoDb();
+  const rows = await mdb.collection('maintenance_supervised').find({}).toArray();
+  const X: number[][] = [];
+  const y: number[] = [];
+  const featureNames = [
+    'bias',
+    'total_rides',
+    'total_distance_km',
+    'avg_ride_duration_min',
+    'usage_days',
+    'last_maintenance_days_ago',
+    'usage_intensity',
+  ];
+  const latestByBike = new Map<string, number[]>();
+  const bikesUsed = new Set<string>();
+
+  for (const r of rows) {
+    const bikeId = String(r.bike_id || '');
+    if (!bikeId) continue;
+    const feats = [
+      1,
+      Number(r.total_rides || 0),
+      Number(r.total_distance_km || 0),
+      Number(r.avg_ride_duration_min || 0),
+      Number(r.usage_days || 0),
+      Number(r.last_maintenance_days_ago || 0),
+      Number(r.usage_intensity || 0),
+    ];
+    const targetDays = Number(r.next_maintenance_in_days || 0);
+    if (!feats.every(isFiniteNum) || !isFiniteNum(targetDays)) continue;
+    X.push(feats);
+    y.push(targetDays);
+    latestByBike.set(bikeId, feats);
+    bikesUsed.add(bikeId);
+  }
+  return { dataset: { X, y, featureNames }, latestByBike, bikesUsed };
+}
+
 function buildFeaturesForRide(
   ride: RideRow,
   trailing: { rides7: number; rides30: number; dist7: number; dist30: number; dur7: number; dur30: number },
@@ -102,6 +143,10 @@ function buildFeaturesForRide(
 }
 
 async function buildDataset(): Promise<{ dataset: Dataset; latestByBike: Map<string, number[]>; bikesUsed: Set<string> }> {
+  const source = String(process.env.MAINTENANCE_SOURCE || '').toLowerCase();
+  if (source === 'mongo_supervised') {
+    return buildDatasetFromMongoSupervised();
+  }
   const rides = await fetchRides();
   const issues = await fetchIssues();
   const nameToBikeId = await mapBikeNameToFirestoreId();
@@ -440,18 +485,25 @@ router.post('/train', requireRole('admin', 'teaching_staff'), async (_req, res) 
     const metricsTrain = { mae: mae(ytrain, yhatTrain), mse: mse(ytrain, yhatTrain), rmse: rmse(ytrain, yhatTrain), r2: r2(ytrain, yhatTrain) };
     const metricsVal = { mae: mae(yval, yhatVal), mse: mse(yval, yhatVal), rmse: rmse(yval, yhatVal), r2: r2(yval, yhatVal) };
 
-    const modelDoc = await db.collection('maintenance_models').add({
-      createdAt: new Date(),
-      featureNames: dataset.featureNames,
-      // Store linear weights for fallback; store booster for xgb
-      weights: engineUsed === 'linear' ? weights : null,
-      boosterB64: engineUsed === 'xgb' ? boosterB64 : null,
-      metrics: { ...metrics, val: metricsVal, train: metricsTrain, engine: engineUsed },
-      n: dataset.y.length,
-      targetTransform: transform,
-      featureMeans: means,
-      featureStds: stds,
-    });
+    // Persist a model record only when using Firestore path; for Mongo modes we mirror below
+    const sourceForMaintenance = String(process.env.MAINTENANCE_SOURCE || '').toLowerCase();
+    const isMongoMode = (sourceForMaintenance === 'mongo' || sourceForMaintenance === 'mongo_supervised');
+    let modelId: string = isMongoMode ? 'mongo-current' : '';
+    if (!isMongoMode) {
+      const modelDoc = await db.collection('maintenance_models').add({
+        createdAt: new Date(),
+        featureNames: dataset.featureNames,
+        // Store linear weights for fallback; store booster for xgb
+        weights: engineUsed === 'linear' ? weights : null,
+        boosterB64: engineUsed === 'xgb' ? boosterB64 : null,
+        metrics: { ...metrics, val: metricsVal, train: metricsTrain, engine: engineUsed },
+        n: dataset.y.length,
+        targetTransform: transform,
+        featureMeans: means,
+        featureStds: stds,
+      });
+      modelId = modelDoc.id;
+    }
 
     const preds: any[] = [];
     // Predict for ALL bikes we have latest features for (not only those with issues)
@@ -491,16 +543,95 @@ router.post('/train', requireRole('admin', 'teaching_staff'), async (_req, res) 
     });
     await batch.commit();
 
+    // If configured to use Mongo as the source of truth for maintenance,
+    // mirror predictions and model metrics to Mongo to keep the admin UI in sync.
+    try {
+      const source = String(process.env.MAINTENANCE_SOURCE || '').toLowerCase();
+      if (source === 'mongo' || source === 'mongo_supervised') {
+        const mdb = await getMongoDb();
+        const mPreds = mdb.collection('maintenance_predictions');
+        const mModel = mdb.collection('maintenance_model');
+
+        // Drop any legacy 'bikelId' index (causes dup errors when field is missing)
+        try {
+          const indexes = await mPreds.indexes();
+          for (const idx of indexes) {
+            // drop if index is named 'bikelId_1' or has key containing bikelId
+            const idxName = String(idx?.name || '');
+            if (idxName === 'bikelId_1' || (idx?.key && Object.prototype.hasOwnProperty.call(idx.key, 'bikelId'))) {
+              try { await mPreds.dropIndex(idxName); } catch {}
+            }
+          }
+        } catch {}
+
+        // Ensure unique index on bikeId with partial filter to ignore docs without the field
+        try {
+          await mPreds.createIndex(
+            { bikeId: 1 },
+            { unique: true, partialFilterExpression: { bikeId: { $exists: true } } }
+          );
+        } catch {}
+
+        // Idempotent bulk upsert per bikeId
+        if (preds.length) {
+          const ops = preds.map(p => ({
+            updateOne: {
+              filter: { bikeId: p.bikeId },
+              update: {
+                $set: {
+                  bikeId: p.bikeId,
+                  predictedKmUntilMaintenance: p.predictedKmUntilMaintenance,
+                  updatedAt: p.updatedAt,
+                },
+              },
+              upsert: true,
+            },
+          }));
+          await mPreds.bulkWrite(ops, { ordered: false });
+        }
+
+        // Upsert model metrics (prefer a stable key)
+        await mModel.updateOne(
+          { key: 'current' },
+          {
+            $set: {
+              metrics: { ...metrics, updatedAt: new Date().toISOString() },
+              createdAt: new Date(),
+            },
+          },
+          { upsert: true }
+        );
+      }
+    } catch {}
+
     // Publish to Realtime Database for live updates (best-effort)
     try {
       const predsObject: Record<string, any> = {};
       preds.forEach(p => { predsObject[p.bikeId] = p; });
       await rtdb.ref('maintenance/predictions').set(predsObject);
-      await rtdb.ref('maintenance/model').set({ id: modelDoc.id, metrics, n: dataset.y.length, createdAt: new Date().toISOString() });
+
+      // When using Mongo as the data source for maintenance, prefer broadcasting
+      // the Mongo-backed model metrics so the UI stays consistent with GET /maintenance/predictions.
+      const source = String(process.env.MAINTENANCE_SOURCE || '').toLowerCase();
+      let metricsForBroadcast: any = metrics;
+      if (source === 'mongo' || source === 'mongo_supervised') {
+        try {
+          const mdb = await getMongoDb();
+          const current = await mdb.collection('maintenance_model').findOne({ key: 'current' });
+          if (current?.metrics) metricsForBroadcast = current.metrics;
+        } catch {}
+      }
+
+      await rtdb.ref('maintenance/model').set({
+        id: modelId,
+        metrics: metricsForBroadcast,
+        n: dataset.y.length,
+        createdAt: new Date().toISOString(),
+      });
     } catch {}
 
     preds.sort((a, b) => (a.predictedKmUntilMaintenance ?? 1e12) - (b.predictedKmUntilMaintenance ?? 1e12));
-    res.json({ success: true, modelId: modelDoc.id, metrics, top: preds.slice(0, 20) });
+    res.json({ success: true, modelId, metrics, top: preds.slice(0, 20) });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e?.message || 'Failed to train model' });
   }
@@ -508,6 +639,29 @@ router.post('/train', requireRole('admin', 'teaching_staff'), async (_req, res) 
 
 router.get('/predictions', requireRole('admin', 'teaching_staff'), async (_req, res) => {
   try {
+    const source = String(process.env.MAINTENANCE_SOURCE || '').toLowerCase();
+
+    if (source === 'mongo' || source === 'mongo_supervised') {
+      const mdb = await getMongoDb();
+      const predsDocs = await mdb.collection('maintenance_predictions').find({}).toArray();
+      const preds = predsDocs.map((doc: any) => {
+        const bikeId = String(doc.bikeId || doc._id || '');
+        return {
+          id: bikeId,
+          bikeId,
+          predictedKmUntilMaintenance: Number(doc.predictedKmUntilMaintenance || 0),
+          updatedAt: (doc.updatedAt || '').toString(),
+        };
+      });
+
+      // Read the pinned current model
+      const model: any = await mdb.collection('maintenance_model').findOne({ key: 'current' });
+
+      preds.sort((a: any, b: any) => (a.predictedKmUntilMaintenance ?? 1e12) - (b.predictedKmUntilMaintenance ?? 1e12));
+      return res.json({ success: true, predictions: preds, model });
+    }
+
+    // Default Firestore path
     const predsSnap = await db.collection('maintenance_predictions').get();
     const preds = predsSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
 

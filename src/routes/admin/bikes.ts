@@ -1,11 +1,26 @@
 import { Router } from 'express';
 import { db } from '../../lib/firebase.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { getMongoDb } from '../../lib/mongo.js';
 
 const router = Router();
 
 router.get('/bikes', requireAuth, async (_req, res) => {
   try {
+    const source = String(process.env.MAINTENANCE_SOURCE || '').toLowerCase();
+
+    if (source === 'mongo') {
+      const mdb = await getMongoDb();
+      const docs = await mdb.collection('bikes').find({}, { projection: { name: 1 } as any }).toArray();
+      const bikes = docs.map((d: any) => ({
+        id: String(d._id),
+        name: d.name || String(d._id),
+        applications: [],
+      }));
+      bikes.sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+      return res.json({ success: true, bikes });
+    }
+
     const bikeSnap = await db.collection('bikes').get();
     const bikes = await Promise.all(bikeSnap.docs.map(async (d: any) => {
       const bike: any = { id: d.id, ...d.data() };
