@@ -77,7 +77,7 @@ router.post('/login', async (req, res) => {
     };
     if (process.env.COOKIE_DOMAIN) cookieBaseOptions.domain = process.env.COOKIE_DOMAIN;
 
-    const roleLower = String(user.role || '').toLowerCase();
+    const roleLower = String(user.role || '').trim().toLowerCase();
 
     const token = issueJwt({ id: String(user.id), email: String(user.email), role: roleLower }, 60 * 60 * 24 * 7);
     res.cookie('auth', token, {
@@ -104,7 +104,7 @@ router.post('/register', async (req, res) => {
   try {
     const { fullName, email, password, role } = req.body || {};
     if (!fullName || !email || !password || !role) return res.status(400).json({ error: 'All fields are required' });
-    const normalizedRole = String(role).toLowerCase();
+    const normalizedRole = String(role).trim().toLowerCase();
 
     const existingSnap = await db.collection('users').where('email', '==', email).limit(1).get();
     if (!existingSnap.empty) return res.status(409).json({ error: 'Email already registered' });
@@ -212,7 +212,7 @@ router.post('/register/complete', async (req, res) => {
     const existingSnap = await db.collection('users').where('email', '==', email).limit(1).get();
     if (!existingSnap.empty) return res.status(409).json({ error: 'Email already registered' });
 
-    const normalizedRole = String(role).toLowerCase();
+    const normalizedRole = String(role).trim().toLowerCase();
     const policyErr = validatePassword(String(password));
     if (policyErr) return res.status(400).json({ error: policyErr });
     const hashed = await bcrypt.hash(String(password), 10);

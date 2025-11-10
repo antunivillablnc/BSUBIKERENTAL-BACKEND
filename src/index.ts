@@ -50,7 +50,7 @@ app.use('/bikes', bikesRouter);
 app.use('/dashboard', dashboardRouter);
 app.use('/leaderboard', leaderboardRouter);
 import { requireRole } from './middleware/auth.js';
-app.use('/admin', requireRole('admin', 'teaching_staff'), adminSplitRouter);
+app.use('/admin', requireRole('admin', 'teaching_staff', 'non_teaching_staff'), adminSplitRouter);
 app.use('/upload-profile-photo', uploadRouter);
 app.use('/upload-issue', uploadIssueRouter);
 app.use('/notifications', notificationsRouter);

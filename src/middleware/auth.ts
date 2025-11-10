@@ -58,7 +58,7 @@ export function requireRole(...allowedRoles: string[]) {
       const token = (req.cookies && req.cookies.auth) || extractBearerToken(req);
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
       const decoded = verifyJwtToken(token);
-      const roleLower = String(decoded.role || '').toLowerCase();
+      const roleLower = String(decoded.role || '').toLowerCase().trim();
       if (!allowed.has(roleLower)) return res.status(403).json({ error: 'Forbidden' });
       req.user = decoded;
       return next();
