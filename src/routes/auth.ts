@@ -38,9 +38,16 @@ router.post('/login', async (req, res) => {
       }
     }
 
-    // There may be duplicate user docs for the same email in some environments.
-    // Fetch matches and deterministically pick the highest-privilege, most recent doc.
-    const userSnap = await db.collection('users').where('email', '==', username).get();
+    // There may be duplicate user docs for the same email in some environments
+    // and casing/whitespace differences between what the user typed and what is stored.
+    // Fetch matches (try exact first, then lowercased) and deterministically
+    // pick the highest-privilege, most recent doc.
+    const typed = String(username || '');
+    const exactSnap = await db.collection('users').where('email', '==', typed).get();
+    const lower = typed.trim().toLowerCase();
+    const lowerSnap = exactSnap.empty
+      ? await db.collection('users').where('email', '==', lower).get()
+      : { docs: [] as any[], empty: true } as any;
     const rolePriority = (r: any) => {
       const v = String(r || '').trim().toLowerCase();
       if (v === 'admin') return 4;
@@ -49,7 +56,15 @@ router.post('/login', async (req, res) => {
       if (v === 'student') return 1;
       return 0;
     };
-    const docsSorted = userSnap.docs
+    const allDocs = [...(exactSnap?.docs || []), ...(lowerSnap?.docs || [])];
+    const seen = new Set<string>();
+    const unique = allDocs.filter((d: any) => {
+      const id = String(d.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    const docsSorted = unique
       .map((d: any) => ({ id: d.id, ...(d.data() as any) }))
       .sort((a: any, b: any) => {
         const rp = rolePriority(b.role) - rolePriority(a.role);
