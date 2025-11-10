@@ -116,6 +116,17 @@ router.post('/login', async (req, res) => {
     const roleLower = String(user.role || '').trim().toLowerCase();
 
     const token = issueJwt({ id: String(user.id), email: String(user.email), role: roleLower }, 60 * 60 * 24 * 7);
+
+    // Proactively clear prior cookies to avoid stale tokens (different domain/path/samesite combos)
+    try {
+      // Clear generic path-only cookies
+      res.clearCookie('auth', { path: '/' } as any);
+      res.clearCookie('role', { path: '/' } as any);
+      // Clear cookies using the same attributes we are about to set
+      res.clearCookie('auth', cookieBaseOptions);
+      res.clearCookie('role', cookieBaseOptions);
+    } catch {}
+
     res.cookie('auth', token, {
       ...cookieBaseOptions,
       // Explicitly mark as a signed JWT cookie token
