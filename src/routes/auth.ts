@@ -134,6 +134,19 @@ router.post('/login', async (req, res) => {
     });
     res.cookie('role', roleLower, cookieBaseOptions);
 
+    // Fallback: also set host-only cookies (no domain) in case COOKIE_DOMAIN is misaligned
+    try {
+      const hostOnlyOpts: any = {
+        path: '/',
+        sameSite: cookieBaseOptions.sameSite,
+        secure: cookieBaseOptions.secure,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+      };
+      res.cookie('auth', token, hostOnlyOpts);
+      res.cookie('role', roleLower, { path: '/', sameSite: cookieBaseOptions.sameSite, secure: cookieBaseOptions.secure, httpOnly: true });
+    } catch {}
+
     console.log('Setting cookies with options:', cookieBaseOptions);
     console.log('Auth token set:', !!token);
     console.log('Role set:', roleLower);
