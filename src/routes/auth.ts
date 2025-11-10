@@ -91,7 +91,7 @@ router.post('/login', async (req, res) => {
     console.log('Auth token set:', !!token);
     console.log('Role set:', roleLower);
 
-    return res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: roleLower, name: user.name } });
+    return res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: roleLower, name: user.name, photo: user.photo || null } });
   } catch (e: any) {
     const message = String(e?.message || 'Login failed');
     // Hide low-level TLS/OpenSSL noise that can happen on first Mongo connect

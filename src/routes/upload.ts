@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import formidable, { File as FormidableFile, Fields, Files } from 'formidable';
 import cloudinary from '../lib/cloudinary.js';
+import { requireAuth } from '../middleware/auth.js';
+import { db } from '../lib/firebase.js';
 
 const router = Router();
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const form = formidable({ keepExtensions: true });
   try {
     const { files } = await new Promise<{ files: Files }>((resolve, reject) => {
@@ -32,7 +34,36 @@ router.post('/', async (req, res) => {
       ],
     });
 
-    return res.json({ success: true, photoUrl: (result as any).secure_url });
+    const secureUrl = (result as any).secure_url as string;
+
+    // Attempt to persist the URL on the authenticated user's profile
+    try {
+      const authUser: any = (req as any).user || {};
+      const userId: string = String(authUser?.id || '');
+      const userEmail: string = String(authUser?.email || '');
+
+      let updated = false;
+      if (userId) {
+        await db.collection('users').doc(userId).update({ photo: secureUrl, updatedAt: new Date() });
+        updated = true;
+      }
+      if (!updated && userEmail) {
+        const snap = await db.collection('users').where('email', '==', userEmail).limit(1).get();
+        const doc = (snap as any).docs?.[0];
+        if (doc?.id) {
+          await db.collection('users').doc(doc.id).update({ photo: secureUrl, updatedAt: new Date() });
+          updated = true;
+        }
+      }
+      if (!updated) {
+        console.warn('[upload-profile-photo] Could not locate user document to update photo for', { userId, userEmail });
+      }
+    } catch (persistErr) {
+      console.error('[upload-profile-photo] Failed to persist photo URL on user record:', persistErr);
+      // Do not fail the upload; return photo URL so client can still use it
+    }
+
+    return res.json({ success: true, photoUrl: secureUrl });
   } catch (e: any) {
     console.error('Profile photo upload error:', e);
     return res.status(500).json({ error: e?.message || 'Failed to upload photo' });
