@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { db } from '../lib/firebase.js';
 
 export type JwtUserPayload = {
   id: string;
@@ -53,13 +54,34 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 export function requireRole(...allowedRoles: string[]) {
   const allowed = new Set(allowedRoles.map(r => String(r).toLowerCase()));
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const token = (req.cookies && req.cookies.auth) || extractBearerToken(req);
       if (!token) return res.status(401).json({ error: 'Unauthorized' });
       const decoded = verifyJwtToken(token);
       const roleLower = String(decoded.role || '').toLowerCase().trim();
-      if (!allowed.has(roleLower)) return res.status(403).json({ error: 'Forbidden' });
+
+      if (!allowed.has(roleLower)) {
+        // Fallback: trust the current role in the database if it is more privileged.
+        try {
+          const email = String((decoded as any).email || '').trim().toLowerCase();
+          if (email) {
+            const snap = await db.collection('users').where('email', '==', email).limit(1).get();
+            const doc = (snap as any)?.docs?.[0];
+            const data: any = doc ? doc.data() : undefined;
+            const dbRole = String(data?.role || '').trim().toLowerCase();
+            if (dbRole && allowed.has(dbRole)) {
+              // Upgrade role for this request based on authoritative DB
+              (decoded as any).role = dbRole;
+              req.user = decoded;
+              return next();
+            }
+          }
+        } catch (e) {
+          // Ignore fallback errors; proceed to deny
+        }
+        return res.status(403).json({ error: 'Forbidden' });
+      }
       req.user = decoded;
       return next();
     } catch {
