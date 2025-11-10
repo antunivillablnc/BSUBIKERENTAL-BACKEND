@@ -38,9 +38,30 @@ router.post('/login', async (req, res) => {
       }
     }
 
-    const userSnap = await db.collection('users').where('email', '==', username).limit(1).get();
-    const userDoc = userSnap.docs[0];
-    const user: any = userDoc ? { id: userDoc.id, ...userDoc.data() } : null;
+    // There may be duplicate user docs for the same email in some environments.
+    // Fetch matches and deterministically pick the highest-privilege, most recent doc.
+    const userSnap = await db.collection('users').where('email', '==', username).get();
+    const rolePriority = (r: any) => {
+      const v = String(r || '').trim().toLowerCase();
+      if (v === 'admin') return 4;
+      if (v === 'teaching_staff') return 3;
+      if (v === 'non_teaching_staff') return 2;
+      if (v === 'student') return 1;
+      return 0;
+    };
+    const docsSorted = userSnap.docs
+      .map((d: any) => ({ id: d.id, ...(d.data() as any) }))
+      .sort((a: any, b: any) => {
+        const rp = rolePriority(b.role) - rolePriority(a.role);
+        if (rp !== 0) return rp;
+        // Prefer most recent createdAt if available
+        const taMaybe = (a.createdAt as any)?.toDate?.()?.getTime?.();
+        const ta = (taMaybe ?? (new Date(a.createdAt || 0).getTime())) || 0;
+        const tbMaybe = (b.createdAt as any)?.toDate?.()?.getTime?.();
+        const tb = (tbMaybe ?? (new Date(b.createdAt || 0).getTime())) || 0;
+        return tb - ta;
+      });
+    const user: any = docsSorted.length ? docsSorted[0] : null;
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     if (typeof user.password !== 'string' || !user.password) {
