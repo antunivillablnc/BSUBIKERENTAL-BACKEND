@@ -134,7 +134,7 @@ router.post('/login', async (req, res) => {
     });
     res.cookie('role', roleLower, cookieBaseOptions);
 
-    // Fallback: also set host-only cookies (no domain) in case COOKIE_DOMAIN is misaligned
+     // Fallback: also set host-only cookies (no domain) in case COOKIE_DOMAIN is misaligned
     try {
       const hostOnlyOpts: any = {
         path: '/',
@@ -226,6 +226,128 @@ router.post('/register/send-link', async (req, res) => {
     return res.json({ message: 'If this email is valid, a verification link has been sent.' });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || 'Failed to send verification link' });
+  }
+});
+
+// Send a one-time password (OTP) to email for registration (cookie-less flow)
+router.post('/register/send-otp', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail) return res.status(400).json({ error: 'Email is required' });
+
+    // Soft-enumeration protection: do not reveal if email exists
+    const existingSnap = await db.collection('users').where('email', '==', cleanEmail).limit(1).get();
+    if (!existingSnap.empty) {
+      // Still allow sending an OTP for UX consistency, but throttle
+    }
+
+    const now = Date.now();
+    const ttlMin = Number(process.env.OTP_TTL_MIN || 10);
+    const resendWindowMs = 60 * 1000; // 1 minute between sends
+    const maxSendsHour = Number(process.env.OTP_MAX_SENDS_PER_HOUR || 5);
+
+    const otpsCol = db.collection('emailOtps');
+    const otpDocRef = otpsCol.doc(cleanEmail);
+    const otpDocSnap = await otpDocRef.get();
+    const data: any = otpDocSnap.exists ? otpDocSnap.data() : null;
+
+    const lastSentAt = Number(data?.lastSentAt || 0);
+    const sendsInHour = (data?.sendsInHour && data?.windowStart && (now - Number(data.windowStart) < 60 * 60 * 1000))
+      ? Number(data.sendsInHour) : 0;
+    const windowStart = (data?.windowStart && (now - Number(data.windowStart) < 60 * 60 * 1000))
+      ? Number(data.windowStart) : now;
+
+    if (now - lastSentAt < resendWindowMs) {
+      return res.json({ message: 'If this email is valid, an OTP has been sent.' });
+    }
+    if (sendsInHour >= maxSendsHour) {
+      return res.json({ message: 'If this email is valid, an OTP has been sent.' });
+    }
+
+    // Generate 6-digit numeric OTP
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    // Hash OTP to store server-side
+    const hash = crypto.createHash('sha256').update(otp).digest('hex');
+
+    await otpDocRef.set({
+      email: cleanEmail,
+      otpHash: hash,
+      expiresAt: new Date(now + ttlMin * 60 * 1000),
+      attemptCount: 0,
+      lastSentAt: now,
+      sendsInHour: sendsInHour + 1,
+      windowStart,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }, { merge: true });
+
+    try {
+      const html = renderBrandedEmail({
+        title: 'Your verification code',
+        intro: `Use the code below to verify your email address.`,
+        ctaHref: null as any,
+        ctaText: '',
+        bodyHtml: `<p style="font-size:24px;letter-spacing:4px;margin:16px 0"><strong>${otp}</strong></p><p style="color:#555">This code expires in ${ttlMin} minutes.</p>`,
+      });
+      await sendMail({
+        to: cleanEmail,
+        subject: 'Your verification code',
+        text: `Your verification code is: ${otp}. It expires in ${ttlMin} minutes.`,
+        html,
+      });
+    } catch (e) {
+      console.error('Failed to send OTP email:', e);
+      // Do not leak failure details to client
+    }
+
+    return res.json({ message: 'If this email is valid, an OTP has been sent.' });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'Failed to send OTP' });
+  }
+});
+
+// Verify OTP; on success, return short-lived registration token in body
+router.post('/register/verify-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body || {};
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const provided = String(otp || '').trim();
+    if (!cleanEmail || !provided) return res.status(400).json({ error: 'Email and OTP are required' });
+
+    const otpDocRef = db.collection('emailOtps').doc(cleanEmail);
+    const snap = await otpDocRef.get();
+    if (!snap.exists) return res.status(400).json({ error: 'Invalid or expired code' });
+    const data = snap.data() as any;
+    const expiresAt = data?.expiresAt?.toDate?.() || data?.expiresAt;
+    if (!expiresAt || new Date(expiresAt).getTime() < Date.now()) {
+      return res.status(400).json({ error: 'Invalid or expired code' });
+    }
+    const maxAttempts = Number(process.env.OTP_MAX_ATTEMPTS || 5);
+    const attemptCount = Number(data?.attemptCount || 0);
+    if (attemptCount >= maxAttempts) {
+      return res.status(400).json({ error: 'Too many attempts. Please request a new code.' });
+    }
+
+    const expectedHash = String(data?.otpHash || '');
+    const providedHash = crypto.createHash('sha256').update(provided).digest('hex');
+    const ok = expectedHash && providedHash === expectedHash;
+
+    if (!ok) {
+      await otpDocRef.set({ attemptCount: attemptCount + 1, updatedAt: new Date() }, { merge: true });
+      return res.status(400).json({ error: 'Invalid code' });
+    }
+
+    // Success → issue the same style short-lived registration token
+    const token = createRegistrationToken(cleanEmail);
+
+    // Invalidate OTP after successful verification
+    try { await otpDocRef.delete(); } catch {}
+
+    const ttlMin = Number(process.env.REG_TOKEN_TTL_MIN || 15);
+    return res.json({ registrationToken: token, expiresInMinutes: ttlMin });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'Failed to verify code' });
   }
 });
 
