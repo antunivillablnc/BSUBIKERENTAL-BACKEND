@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { rtdb } from '../lib/firebase.js';
+import { db, rtdb } from '../lib/firebase.js';
 
 const router = Router();
 
@@ -54,6 +54,24 @@ router.post('/', async (req, res) => {
     const ts = parseTimestamp(timestamp);
     const receivedAt = Date.now();
 
+    // Attempt to resolve bike assigned to this deviceId via bikes.DEVICE_ID (fallback to bikes.deviceId)
+    let bike: any = null;
+    try {
+      const snap1 = await db.collection('bikes').where('DEVICE_ID', '==', id).limit(1).get();
+      if (!snap1.empty) {
+        const d: any = snap1.docs[0];
+        bike = { id: d.id, ...d.data() };
+      } else {
+        const snap2 = await db.collection('bikes').where('deviceId', '==', id).limit(1).get();
+        if (!snap2.empty) {
+          const d: any = snap2.docs[0];
+          bike = { id: d.id, ...d.data() };
+        }
+      }
+    } catch {
+      // ignore lookup failures and proceed with device-only writes
+    }
+
     const telemetry = {
       lat,
       lng,
@@ -70,12 +88,33 @@ router.post('/', async (req, res) => {
       receivedAt,
     };
 
-    const base = `/tracker/devices/${id}`;
     const tsKey = String(ts);
     const updates: Record<string, any> = {};
-    updates[`${base}/telemetry/${tsKey}`] = telemetry;
-    updates[`${base}/last`] = telemetry;
-    updates[`/tracker/feed/${tsKey}_${id}`] = { deviceId: id, ...telemetry };
+
+    // Device-scoped writes (existing)
+    const deviceBase = `/tracker/devices/${id}`;
+    updates[`${deviceBase}/telemetry/${tsKey}`] = telemetry;
+    updates[`${deviceBase}/last`] = telemetry;
+
+    // Feed entry, enriched with bike when available
+    updates[`/tracker/feed/${tsKey}_${id}`] = {
+      deviceId: id,
+      bikeId: bike?.id ?? null,
+      bikeName: bike?.name ?? null,
+      ...telemetry,
+    };
+
+    // Bike-scoped writes (only if bike is resolved)
+    if (bike?.id) {
+      const bikeBase = `/tracker/bikes/${bike.id}`;
+      const enriched = { ...telemetry, deviceId: id, bikeId: bike.id, bikeName: bike.name ?? null };
+      updates[`${bikeBase}/telemetry/${tsKey}`] = enriched;
+      updates[`${bikeBase}/last`] = enriched;
+
+      // Optional: by-name convenience key
+      const nameKey = String(bike.name || bike.id).replace(/[.#$\[\]/]/g, '_');
+      updates[`/tracker/bikesByName/${nameKey}/last`] = enriched;
+    }
 
     // Support both real RTDB (admin SDK) and the Mongo fallback shim (which only implements .set)
     try {
@@ -92,7 +131,7 @@ router.post('/', async (req, res) => {
       await Promise.all(ops);
     }
 
-    return res.status(200).json({ status: 'success', message: 'Location data received', deviceId: id });
+    return res.status(200).json({ status: 'success', message: 'Location data received', deviceId: id, bikeId: bike?.id ?? null });
   } catch (e: any) {
     return res.status(500).json({ status: 'error', message: e?.message || 'internal error' });
   }
@@ -118,6 +157,55 @@ router.get('/last', async (req, res) => {
       return res.json({ status: 'success', deviceId: id, data: snap?.val?.() ?? snap?.val ?? null });
     }
     return res.status(500).json({ status: 'error', message: 'read not supported in shim' });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'internal error' });
+  }
+});
+
+// Read back the latest sample for a bike
+router.get('/last-by-bike', async (req, res) => {
+  try {
+    const bikeId = String((req.query as any).bikeId || '').trim();
+    if (!bikeId) return res.status(400).json({ status: 'error', message: 'bikeId required' });
+    const path = `/tracker/bikes/${bikeId}/last`;
+    const ref: any = (rtdb as any).ref ? (rtdb as any).ref(path) : null;
+    if (!ref) return res.status(500).json({ status: 'error', message: 'rtdb unavailable' });
+    let snap: any = null;
+    if (typeof ref.get === 'function') {
+      snap = await ref.get();
+      return res.json({ status: 'success', bikeId, data: snap?.val?.() ?? snap?.val ?? null });
+    }
+    if (typeof ref.once === 'function') {
+      snap = await new Promise((resolve, reject) => ref.once('value', resolve, reject));
+      return res.json({ status: 'success', bikeId, data: snap?.val?.() ?? snap?.val ?? null });
+    }
+    return res.status(500).json({ status: 'error', message: 'read not supported in shim' });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'internal error' });
+  }
+});
+
+// Resolve deviceId → bike metadata
+router.get('/resolve', async (req, res) => {
+  try {
+    const id = String((req.query as any).deviceId || '').trim();
+    if (!id) return res.status(400).json({ status: 'error', message: 'deviceId required' });
+    let bike: any = null;
+    try {
+      const snap1 = await db.collection('bikes').where('DEVICE_ID', '==', id).limit(1).get();
+      if (!snap1.empty) {
+        const d: any = snap1.docs[0];
+        bike = { id: d.id, ...d.data() };
+      } else {
+        const snap2 = await db.collection('bikes').where('deviceId', '==', id).limit(1).get();
+        if (!snap2.empty) {
+          const d: any = snap2.docs[0];
+          bike = { id: d.id, ...d.data() };
+        }
+      }
+    } catch {}
+    if (!bike) return res.json({ status: 'success', found: false });
+    return res.json({ status: 'success', found: true, bike: { id: bike.id, name: bike.name ?? null } });
   } catch (e: any) {
     return res.status(500).json({ status: 'error', message: e?.message || 'internal error' });
   }
