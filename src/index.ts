@@ -38,6 +38,8 @@ app.use(
   })
 );
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false }));
+app.use(express.text({ type: ['text/plain'], limit: '1mb' }));
 app.use(cookieParser());
 
 app.get('/health', (_req, res) => {

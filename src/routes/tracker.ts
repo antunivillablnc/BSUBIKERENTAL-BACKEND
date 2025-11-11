@@ -21,37 +21,62 @@ function parseTimestamp(v: any): number {
 
 router.post('/', async (req, res) => {
   try {
-    const auth = String(req.headers['authorization'] || '');
     const secret = process.env.IOT_SHARED_SECRET || '';
     if (!secret) return res.status(500).json({ status: 'error', message: 'server-misconfig' });
-    if (!auth.startsWith('Bearer ') || auth.slice(7).trim() !== secret) {
+
+    // Accept multiple auth styles: Authorization: Bearer, X-Api-Key, or secret in body/query
+    const authHeader = String(req.headers['authorization'] || '').trim();
+    const apiKeyHeader = String(req.headers['x-api-key'] || '').trim();
+    const qs: any = (req.query as any) || {};
+    let body: any = (req.body as any) || {};
+    if (typeof body === 'string') {
+      try {
+        const parsed = JSON.parse(body);
+        body = parsed;
+      } catch {
+        // keep as string; handled below by merging with qs
+      }
+    }
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    const candidateKeys = [
+      bearerToken,
+      apiKeyHeader,
+      String(body?.secret || body?.apiKey || body?.key || ''),
+      String(qs?.secret || qs?.apiKey || qs?.key || ''),
+    ].filter(Boolean);
+    if (!candidateKeys.some(k => k === secret)) {
       return res.status(401).json({ status: 'error', message: 'unauthorized' });
     }
 
-    const {
-      deviceId,
-      latitude,
-      longitude,
-      timestamp,
-      alertType,
-      signalStrength,
-      localIP,
-      imei,
-      speed,
-      heading,
-      accuracy,
-      alt,
-      battery,
-    } = req.body || {};
+    // Merge common sources (SIM800 often uses x-www-form-urlencoded or query)
+    const src: any = { ...(qs || {}), ...(typeof body === 'object' && body ? body : {}) };
 
-    const id = String(deviceId || '').trim();
-    const lat = toNumber(latitude);
-    const lng = toNumber(longitude);
+    // Resolve device identifier from common aliases
+    const id = String(
+      src.deviceId || src.device || src.id || src.imei || src.IMEI || req.headers['x-device-id'] || ''
+    ).trim();
+
+    // Resolve lat/lng from common aliases
+    const lat =
+      toNumber(src.latitude) ??
+      toNumber(src.lat) ??
+      toNumber(src.gpsLat);
+
+    const lng =
+      toNumber(src.longitude) ??
+      toNumber(src.lng) ??
+      toNumber(src.lon) ??
+      toNumber(src.long) ??
+      toNumber(src.gpsLng);
+
     if (!id) return res.status(400).json({ status: 'error', message: 'deviceId required' });
     if (lat === undefined || lng === undefined) return res.status(400).json({ status: 'error', message: 'latitude,longitude required' });
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return res.status(422).json({ status: 'error', message: 'lat/lng out of range' });
 
-    const ts = parseTimestamp(timestamp);
+    // Flexible timestamp fields
+    const ts = parseTimestamp(
+      src.timestamp ?? src.ts ?? src.time ?? src.epoch ?? src.date
+    );
     const receivedAt = Date.now();
 
     // Attempt to resolve bike assigned to this deviceId via bikes.DEVICE_ID (fallback to bikes.deviceId)
@@ -75,15 +100,15 @@ router.post('/', async (req, res) => {
     const telemetry = {
       lat,
       lng,
-      speed: toNumber(speed) ?? null,
-      heading: toNumber(heading) ?? null,
-      accuracy: toNumber(accuracy) ?? null,
-      alt: toNumber(alt) ?? null,
-      battery: toNumber(battery) ?? null,
-      alertType: typeof alertType === 'string' ? alertType : '',
-      signalStrength: toNumber(signalStrength) ?? null,
-      localIP: typeof localIP === 'string' ? localIP : null,
-      imei: typeof imei === 'string' ? imei : null,
+      speed: (toNumber(src.speed) ?? toNumber(src.speedKmh) ?? toNumber(src.speed_kmh) ?? toNumber(src.kmh)) ?? null,
+      heading: (toNumber(src.heading) ?? toNumber(src.bearing) ?? toNumber(src.course)) ?? null,
+      accuracy: (toNumber(src.accuracy) ?? toNumber(src.acc) ?? toNumber(src.hAcc)) ?? null,
+      alt: (toNumber(src.alt) ?? toNumber(src.altitude)) ?? null,
+      battery: (toNumber(src.battery) ?? toNumber(src.batt) ?? toNumber(src.battery_level) ?? toNumber(src.batteryPercent)) ?? null,
+      alertType: typeof src.alertType === 'string' ? src.alertType : '',
+      signalStrength: (toNumber(src.signalStrength) ?? toNumber(src.rssi) ?? toNumber(src.signal)) ?? null,
+      localIP: typeof src.localIP === 'string' ? src.localIP : null,
+      imei: typeof src.imei === 'string' ? src.imei : (typeof src.IMEI === 'string' ? src.IMEI : null),
       ts,
       receivedAt,
     };
