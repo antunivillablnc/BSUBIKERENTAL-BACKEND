@@ -26,6 +26,21 @@ router.get('/', async (_req, res) => {
   }
 });
 
+// Fetch a single bike by id (public, no auth). Returns id, name, deviceId fields.
+router.get('/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ success: false, error: 'id required' });
+    const doc = await db.collection('bikes').doc(id).get();
+    if (!doc.exists) return res.status(404).json({ success: false, error: 'not found' });
+    const data: any = { id: doc.id, ...doc.data() };
+    const deviceId = data?.DEVICE_ID || data?.deviceId || null;
+    res.json({ success: true, bike: { id: doc.id, name: data?.name || null, deviceId } });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e?.message || 'Failed to load bike' });
+  }
+});
+
 export default router;
 
 
