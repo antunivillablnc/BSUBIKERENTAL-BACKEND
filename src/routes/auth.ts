@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { db } from '../lib/firebase.js';
 import { validatePassword } from '../lib/password.js';
 import { issueJwt, requireAuth } from '../middleware/auth.js';
+import { getMongoDb } from '../lib/mongo.js';
 
 const router = Router();
 
@@ -557,4 +558,169 @@ router.get('/me', requireAuth, async (req, res) => {
   return res.json({ user: req.user });
 });
 
+
+// Profile: update name (and optionally photo) without OTP - MongoDB
+router.post('/profile/update-name', requireAuth, async (req, res) => {
+  try {
+    const { name, photo } = req.body || {};
+    const cleanName = String(name || '').trim();
+    if (!cleanName) return res.status(400).json({ success: false, error: 'Name is required' });
+
+    const dbm = await getMongoDb();
+    const usersCol = dbm.collection('users');
+    const email = String((req as any)?.user?.email || '').trim().toLowerCase();
+    if (!email) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const set: any = { name: cleanName, updatedAt: new Date() };
+    if (typeof photo === 'string') set.photo = photo;
+    await usersCol.updateOne({ email }, { $set: set });
+
+    // Also update leaderboard display name if present (best-effort)
+    try {
+      const userDoc = await usersCol.findOne({ email }, { projection: { _id: 1 } });
+      if (userDoc?._id) {
+        await dbm.collection('leaderboard').updateMany({ userId: String(userDoc._id) }, { $set: { name: cleanName, updatedAt: new Date() } });
+      }
+    } catch {}
+
+    return res.json({ success: true });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Failed to update name' });
+  }
+});
+
+// Profile: send OTP to verify new email - MongoDB
+router.post('/profile/send-email-otp', requireAuth, async (req, res) => {
+  try {
+    const { newEmail } = req.body || {};
+    const cleanNew = String(newEmail || '').trim().toLowerCase();
+    if (!cleanNew) return res.status(400).json({ success: false, error: 'New email is required' });
+
+    const dbm = await getMongoDb();
+    const usersCol = dbm.collection('users');
+
+    // Ensure email not already in use
+    const existing = await usersCol.findOne({ email: cleanNew });
+    if (existing) return res.status(409).json({ success: false, error: 'Email already in use' });
+
+    // Throttle/issue OTP
+    const now = Date.now();
+    const ttl = Number(process.env.OTP_TTL_MIN || 10);
+    const resendWindowMs = 60 * 1000;
+    const emailOtps = dbm.collection('emailOtps');
+
+    const userEmail = String((req as any)?.user?.email || '').trim().toLowerCase();
+    const key = { purpose: 'change-email', userEmail, newEmail: cleanNew };
+    const doc = await emailOtps.findOne(key);
+
+    if (doc && typeof doc.lastSentAt === 'number' && now - doc.lastSentAt < resendWindowMs) {
+      // Soft success to avoid enumeration UX
+      return res.json({ success: true, message: 'OTP sent if eligible' });
+    }
+
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const hash = crypto.createHash('sha256').update(otp).digest('hex');
+    await emailOtps.updateOne(
+      key,
+      {
+        $set: {
+          otpHash: hash,
+          lastSentAt: now,
+          attemptCount: 0,
+          expiresAt: new Date(now + ttl * 60 * 1000),
+          createdAt: doc?.createdAt || new Date(),
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+
+    try {
+      const html = renderBrandedEmail({
+        title: 'Verify your new email',
+        intro: 'Use the code below to confirm your new email address.',
+        ctaHref: null as any,
+        ctaText: '',
+        bodyHtml: `<p style="font-size:24px;letter-spacing:4px;margin:16px 0"><strong>${otp}</strong></p><p style="color:#555">This code expires in ${ttl} minutes.</p>`,
+      });
+      await sendMail({
+        to: cleanNew,
+        subject: 'Your verification code',
+        text: `Your verification code is: ${otp}. It expires in ${ttl} minutes.`,
+        html,
+      });
+    } catch {}
+
+    return res.json({ success: true, message: 'OTP sent if eligible' });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Failed to send OTP' });
+  }
+});
+
+// Profile: verify OTP and change email - MongoDB
+router.post('/profile/verify-email-otp', requireAuth, async (req, res) => {
+  try {
+    const { newEmail, otp } = req.body || {};
+    const cleanNew = String(newEmail || '').trim().toLowerCase();
+    const provided = String(otp || '').trim();
+    if (!cleanNew || !provided) return res.status(400).json({ success: false, error: 'Email and OTP are required' });
+
+    const dbm = await getMongoDb();
+    const usersCol = dbm.collection('users');
+    const emailOtps = dbm.collection('emailOtps');
+
+    const userEmail = String((req as any)?.user?.email || '').trim().toLowerCase();
+    const key = { purpose: 'change-email', userEmail, newEmail: cleanNew };
+    const doc = await emailOtps.findOne(key);
+    if (!doc) return res.status(400).json({ success: false, error: 'Invalid or expired code' });
+
+    const expiresAt = doc?.expiresAt instanceof Date ? doc.expiresAt : new Date(doc?.expiresAt || 0);
+    if (!expiresAt || expiresAt.getTime() < Date.now()) {
+      return res.status(400).json({ success: false, error: 'Invalid or expired code' });
+    }
+    const attemptCount = Number(doc?.attemptCount || 0);
+    const maxAttempts = Number(process.env.OTP_MAX_ATTEMPTS || 5);
+    if (attemptCount >= maxAttempts) {
+      return res.status(400).json({ success: false, error: 'Too many attempts. Please request a new code.' });
+    }
+
+    const expected = String(doc?.otpHash || '');
+    const providedHash = crypto.createHash('sha256').update(provided).digest('hex');
+    if (!expected || expected !== providedHash) {
+      await emailOtps.updateOne(key, { $set: { attemptCount: attemptCount + 1, updatedAt: new Date() } });
+      return res.status(400).json({ success: false, error: 'Invalid code' });
+    }
+
+    // Passed → change email
+    const userDoc = await usersCol.findOne({ email: userEmail });
+    if (!userDoc) return res.status(404).json({ success: false, error: 'User not found' });
+
+    await usersCol.updateOne({ _id: userDoc._id }, { $set: { email: cleanNew, updatedAt: new Date() } });
+    try { await emailOtps.deleteOne(key); } catch {}
+
+    // Issue new JWT cookie with updated email
+    const cookieBaseOptions: any = {
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    };
+    if (process.env.COOKIE_DOMAIN) cookieBaseOptions.domain = process.env.COOKIE_DOMAIN;
+    const roleLower = String(userDoc.role || '').trim().toLowerCase();
+    const token = issueJwt({ id: String(userDoc._id), email: cleanNew, role: roleLower }, 60 * 60 * 24 * 7);
+
+    try {
+      res.clearCookie('auth', { path: '/' } as any);
+      res.clearCookie('role', { path: '/' } as any);
+      res.clearCookie('auth', cookieBaseOptions);
+      res.clearCookie('role', cookieBaseOptions);
+    } catch {}
+    res.cookie('auth', token, { ...cookieBaseOptions, maxAge: 7 * 24 * 60 * 60 * 1000 });
+    res.cookie('role', roleLower, cookieBaseOptions);
+
+    return res.json({ success: true, user: { id: String(userDoc._id), email: cleanNew, name: userDoc.name, role: roleLower, photo: userDoc.photo || null } });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e?.message || 'Failed to verify code' });
+  }
+});
 
