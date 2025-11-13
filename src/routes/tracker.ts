@@ -21,8 +21,14 @@ function parseTimestamp(v: any): number {
 
 router.post('/', async (req, res) => {
   try {
-    const secret = process.env.IOT_SHARED_SECRET || '';
-    if (!secret) return res.status(500).json({ status: 'error', message: 'server-misconfig' });
+		const secret = process.env.IOT_SHARED_SECRET || '';
+		const allowUnauthEnv = String(process.env.TRACKER_ALLOW_UNAUTH || '').trim().toLowerCase();
+		const allowUnauth = allowUnauthEnv === 'true' || allowUnauthEnv === '1' || allowUnauthEnv === 'yes';
+
+		// When temporarily allowing unauthenticated tracker posts, skip secret checks entirely
+		if (!allowUnauth && !secret) {
+			return res.status(500).json({ status: 'error', message: 'server-misconfig' });
+		}
 
     // Accept multiple auth styles: Authorization: Bearer, X-Api-Key, or secret in body/query
     const authHeader = String(req.headers['authorization'] || '').trim();
@@ -37,16 +43,18 @@ router.post('/', async (req, res) => {
         // keep as string; handled below by merging with qs
       }
     }
-    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    const candidateKeys = [
-      bearerToken,
-      apiKeyHeader,
-      String(body?.secret || body?.apiKey || body?.key || ''),
-      String(qs?.secret || qs?.apiKey || qs?.key || ''),
-    ].filter(Boolean);
-    if (!candidateKeys.some(k => k === secret)) {
-      return res.status(401).json({ status: 'error', message: 'unauthorized' });
-    }
+		const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+		if (!allowUnauth) {
+			const candidateKeys = [
+				bearerToken,
+				apiKeyHeader,
+				String(body?.secret || body?.apiKey || body?.key || ''),
+				String(qs?.secret || qs?.apiKey || qs?.key || ''),
+			].filter(Boolean);
+			if (!candidateKeys.some(k => k === secret)) {
+				return res.status(401).json({ status: 'error', message: 'unauthorized' });
+			}
+		}
 
     // Merge common sources (SIM800 often uses x-www-form-urlencoded or query)
     const src: any = { ...(qs || {}), ...(typeof body === 'object' && body ? body : {}) };
