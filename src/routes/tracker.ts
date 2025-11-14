@@ -40,8 +40,8 @@ function fromNmeaDdmm(value: number, kind: 'lat' | 'lng'): number | undefined {
 router.post('/', async (req, res) => {
   try {
 		const secret = process.env.IOT_SHARED_SECRET || '';
-		const allowUnauthEnv = String(process.env.TRACKER_ALLOW_UNAUTH || '').trim().toLowerCase();
-		const allowUnauth = allowUnauthEnv === 'true' || allowUnauthEnv === '1' || allowUnauthEnv === 'yes';
+		// Auth disabled: allow unauthenticated tracker posts unconditionally
+		const allowUnauth = true;
 
 		// When temporarily allowing unauthenticated tracker posts, skip secret checks entirely
 		if (!allowUnauth && !secret) {
