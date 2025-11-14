@@ -19,6 +19,24 @@ function parseTimestamp(v: any): number {
   return Number.isFinite(ms) ? ms : Date.now();
 }
 
+// Convert NMEA-style ddmm.mmmm (or dddmm.mmmm for longitude) to decimal degrees.
+function fromNmeaDdmm(value: number, kind: 'lat' | 'lng'): number | undefined {
+  if (!Number.isFinite(value)) return undefined;
+  const abs = Math.abs(value);
+  // Heuristic: values below 100 are unlikely to be ddmm.mmmm
+  if (abs < 100) return undefined;
+  const degrees = Math.floor(abs / 100);
+  const minutes = abs - degrees * 100;
+  const decimal = degrees + minutes / 60;
+  const signed = value < 0 ? -decimal : decimal;
+  if (kind === 'lat') {
+    if (decimal > 90) return undefined;
+  } else {
+    if (decimal > 180) return undefined;
+  }
+  return signed;
+}
+
 router.post('/', async (req, res) => {
   try {
 		const secret = process.env.IOT_SHARED_SECRET || '';
@@ -65,17 +83,49 @@ router.post('/', async (req, res) => {
     ).trim();
 
     // Resolve lat/lng from common aliases
-    const lat =
+    let lat =
       toNumber(src.latitude) ??
       toNumber(src.lat) ??
       toNumber(src.gpsLat);
 
-    const lng =
+    let lng =
       toNumber(src.longitude) ??
       toNumber(src.lng) ??
       toNumber(src.lon) ??
       toNumber(src.long) ??
       toNumber(src.gpsLng);
+
+    // Fallback: parse from a single "coords" string like "lat,lng" or "lat lng"
+    if ((lat === undefined || lng === undefined)) {
+      const coordStr =
+        (typeof src.coords === 'string' && src.coords) ||
+        (typeof src.coordinate === 'string' && src.coordinate) ||
+        (typeof src.location === 'string' && src.location) ||
+        (typeof src.ll === 'string' && src.ll) ||
+        (typeof src.gps === 'string' && src.gps) ||
+        '';
+      if (coordStr) {
+        const parts = String(coordStr).split(/[,\s;]+/).filter(Boolean);
+        if (parts.length >= 2) {
+          const candLat = toNumber(parts[0]);
+          const candLng = toNumber(parts[1]);
+          if (lat === undefined) lat = candLat;
+          if (lng === undefined) lng = candLng;
+        }
+      }
+    }
+
+    // Heuristic: if values look like NMEA ddmm.mmmm or dddmm.mmmm, convert to decimal degrees
+    const limitLat = 90;
+    const limitLng = 180;
+    if (lat !== undefined && (Math.abs(lat) > limitLat)) {
+      const converted = fromNmeaDdmm(lat, 'lat');
+      if (converted !== undefined) lat = converted;
+    }
+    if (lng !== undefined && (Math.abs(lng) > limitLng)) {
+      const converted = fromNmeaDdmm(lng, 'lng');
+      if (converted !== undefined) lng = converted;
+    }
 
     if (!id) return res.status(400).json({ status: 'error', message: 'deviceId required' });
     if (lat === undefined || lng === undefined) return res.status(400).json({ status: 'error', message: 'latitude,longitude required' });
