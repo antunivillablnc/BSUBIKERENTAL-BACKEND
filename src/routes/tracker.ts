@@ -86,14 +86,20 @@ router.post('/', async (req, res) => {
     let lat =
       toNumber(src.latitude) ??
       toNumber(src.lat) ??
-      toNumber(src.gpsLat);
+      toNumber(src.gpsLat) ??
+      toNumber((src as any)?.Latitude) ??
+      toNumber((src as any)?.Lat) ??
+      toNumber((src as any)?.LAT);
 
     let lng =
       toNumber(src.longitude) ??
       toNumber(src.lng) ??
       toNumber(src.lon) ??
       toNumber(src.long) ??
-      toNumber(src.gpsLng);
+      toNumber(src.gpsLng) ??
+      toNumber((src as any)?.Longitude) ??
+      toNumber((src as any)?.Lng) ??
+      toNumber((src as any)?.LNG);
 
     // Fallback: parse from a single "coords" string like "lat,lng" or "lat lng"
     if ((lat === undefined || lng === undefined)) {
@@ -105,12 +111,18 @@ router.post('/', async (req, res) => {
         (typeof src.gps === 'string' && src.gps) ||
         '';
       if (coordStr) {
-        const parts = String(coordStr).split(/[,\s;]+/).filter(Boolean);
-        if (parts.length >= 2) {
-          const candLat = toNumber(parts[0]);
-          const candLng = toNumber(parts[1]);
-          if (lat === undefined) lat = candLat;
-          if (lng === undefined) lng = candLng;
+        const raw = String(coordStr);
+        const tokens = raw.split(/[,\s;]+/).filter(Boolean);
+        const numeric: number[] = [];
+        for (const t of tokens) {
+          const match = t.match(/-?\d+(\.\d+)?/);
+          if (!match) continue;
+          const n = toNumber(match[0]);
+          if (n !== undefined) numeric.push(n);
+        }
+        if (numeric.length >= 2) {
+          if (lat === undefined) lat = numeric[0];
+          if (lng === undefined) lng = numeric[1];
         }
       }
     }
