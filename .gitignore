@@ -25,4 +25,7 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Lockfiles (ensure backend lockfile is committed)
+!package-lock.json
+
 
