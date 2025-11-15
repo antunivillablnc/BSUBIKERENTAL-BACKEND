@@ -46,6 +46,30 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
 
+// Endpoint to show deployment URL
+app.get('/deployment-info', (_req, res) => {
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  const railwayStaticUrl = process.env.RAILWAY_STATIC_URL;
+  const port = process.env.PORT || 4000;
+  
+  const deploymentUrl = railwayDomain 
+    ? `https://${railwayDomain}`
+    : railwayStaticUrl 
+    ? railwayStaticUrl
+    : null;
+  
+  res.json({
+    deploymentUrl,
+    port: Number(port),
+    environment: process.env.NODE_ENV || 'development',
+    railwayDomain,
+    railwayStaticUrl,
+    message: deploymentUrl 
+      ? `Your Railway deployment URL: ${deploymentUrl}`
+      : 'Railway URL not found. Check Railway dashboard or environment variables.'
+  });
+});
+
 app.use('/auth', authRouter);
 app.use('/applications', applicationRouter);
 app.use('/bikes', bikesRouter);
@@ -63,7 +87,21 @@ app.use('/tracker', trackerRouter);
 
 const port = Number(process.env.PORT || 4000);
 app.listen(port, () => {
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  const railwayStaticUrl = process.env.RAILWAY_STATIC_URL;
+  const deploymentUrl = railwayDomain 
+    ? `https://${railwayDomain}`
+    : railwayStaticUrl 
+    ? railwayStaticUrl
+    : null;
+  
   console.log(`[backend] listening on http://localhost:${port}`);
+  if (deploymentUrl) {
+    console.log(`[railway] deployment URL: ${deploymentUrl}`);
+  } else {
+    console.log(`[railway] deployment URL not found in environment variables`);
+    console.log(`[railway] check Railway dashboard or visit /deployment-info endpoint`);
+  }
 });
 
 console.log('[tracker] secret present:', !!process.env.IOT_SHARED_SECRET, 'len:', (process.env.IOT_SHARED_SECRET || '').length);
