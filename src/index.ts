@@ -86,7 +86,7 @@ app.use('/webhooks/resend', resendWebhookRouter);
 app.use('/tracker', trackerRouter);
 
 const port = Number(process.env.PORT || 4000);
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
   const railwayStaticUrl = process.env.RAILWAY_STATIC_URL;
   const deploymentUrl = railwayDomain 
@@ -95,7 +95,7 @@ app.listen(port, () => {
     ? railwayStaticUrl
     : null;
   
-  console.log(`[backend] listening on http://localhost:${port}`);
+  console.log(`[backend] listening on 0.0.0.0:${port}`);
   if (deploymentUrl) {
     console.log(`[railway] deployment URL: ${deploymentUrl}`);
   } else {
