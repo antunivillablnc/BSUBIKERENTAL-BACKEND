@@ -27,6 +27,5 @@ Thumbs.db
 
 # Lockfiles (ensure backend lockfile is committed)
 !package-lock.json
-!package.json
 
 
