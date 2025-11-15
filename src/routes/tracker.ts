@@ -39,18 +39,7 @@ function fromNmeaDdmm(value: number, kind: 'lat' | 'lng'): number | undefined {
 
 router.post('/', async (req, res) => {
   try {
-		const secret = process.env.IOT_SHARED_SECRET || '';
-		// Auth disabled: allow unauthenticated tracker posts unconditionally
-		const allowUnauth = true;
-
-		// When temporarily allowing unauthenticated tracker posts, skip secret checks entirely
-		if (!allowUnauth && !secret) {
-			return res.status(500).json({ status: 'error', message: 'server-misconfig' });
-		}
-
-    // Accept multiple auth styles: Authorization: Bearer, X-Api-Key, or secret in body/query
-    const authHeader = String(req.headers['authorization'] || '').trim();
-    const apiKeyHeader = String(req.headers['x-api-key'] || '').trim();
+    // Demo mode: no auth secret required. Accept typical SIM800L payloads.
     const qs: any = (req.query as any) || {};
     let body: any = (req.body as any) || {};
     if (typeof body === 'string') {
@@ -61,18 +50,6 @@ router.post('/', async (req, res) => {
         // keep as string; handled below by merging with qs
       }
     }
-		const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-		if (!allowUnauth) {
-			const candidateKeys = [
-				bearerToken,
-				apiKeyHeader,
-				String(body?.secret || body?.apiKey || body?.key || ''),
-				String(qs?.secret || qs?.apiKey || qs?.key || ''),
-			].filter(Boolean);
-			if (!candidateKeys.some(k => k === secret)) {
-				return res.status(401).json({ status: 'error', message: 'unauthorized' });
-			}
-		}
 
     // Merge common sources (SIM800 often uses x-www-form-urlencoded or query)
     const src: any = { ...(qs || {}), ...(typeof body === 'object' && body ? body : {}) };
@@ -184,9 +161,10 @@ router.post('/', async (req, res) => {
     };
 
     const tsKey = String(ts);
+    // Build RTDB multi-location updates
     const updates: Record<string, any> = {};
 
-    // Device-scoped writes (existing)
+    // Device-scoped writes
     const deviceBase = `/tracker/devices/${id}`;
     updates[`${deviceBase}/telemetry/${tsKey}`] = telemetry;
     updates[`${deviceBase}/last`] = telemetry;
@@ -211,7 +189,7 @@ router.post('/', async (req, res) => {
       updates[`/tracker/bikesByName/${nameKey}/last`] = enriched;
     }
 
-    // Support both real RTDB (admin SDK) and the Mongo fallback shim (which only implements .set)
+    // Perform bulk update with fallback to per-path sets
     try {
       const rootRef: any = (rtdb as any).ref ? (rtdb as any).ref('/') : null;
       if (rootRef && typeof rootRef.update === 'function') {
@@ -316,8 +294,7 @@ router.get('/diag', async (_req, res) => {
       rtdbMode: canUpdate ? 'admin' : 'limited',
       env: {
         FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ? 'set' : 'missing',
-        FIREBASE_DATABASE_URL: process.env.FIREBASE_DATABASE_URL || '(unset)',
-        IOT_SHARED_SECRET: (process.env.IOT_SHARED_SECRET || '').length ? 'set' : 'missing',
+        FIREBASE_DATABASE_URL: process.env.FIREBASE_DATABASE_URL || '(unset)'
       },
     });
   } catch (e: any) {
