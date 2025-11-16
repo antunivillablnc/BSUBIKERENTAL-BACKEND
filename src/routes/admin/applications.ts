@@ -259,9 +259,8 @@ router.post('/applications/evaluation', requireAuth, async (req, res) => {
       await evaluationsCollection.insertOne(completeEvaluation);
     }
     
-    // Use completeEvaluation for Firestore as well
-    const evaluationForFirestore = { ...completeEvaluation };
-    delete evaluationForFirestore.applicationId; // Remove applicationId from Firestore (it's in the document ID)
+        // Use completeEvaluation for Firestore as well
+        const { applicationId: _, ...evaluationForFirestore } = completeEvaluation; // Remove applicationId from Firestore (it's in the document ID)
 
     // Also update Firestore application document with evaluation reference (for backward compatibility)
     await db.collection('applications').doc(applicationId).update({ evaluation: evaluationForFirestore });
