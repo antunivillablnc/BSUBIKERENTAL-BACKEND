@@ -15,6 +15,8 @@ import reportedIssuesRouter from './routes/reportedIssues.js';
 import maintenanceRouter from './routes/maintenance.js';
 import resendWebhookRouter from './routes/webhooks/resend.js';
 import trackerRouter from './routes/tracker.js';
+import cloneRouter from './routes/clone.js';
+import { requireRole } from './middleware/auth.js';
 
 const app = express();
 
@@ -75,7 +77,6 @@ app.use('/applications', applicationRouter);
 app.use('/bikes', bikesRouter);
 app.use('/dashboard', dashboardRouter);
 app.use('/leaderboard', leaderboardRouter);
-import { requireRole } from './middleware/auth.js';
 app.use('/admin', requireRole('admin'), adminSplitRouter);
 app.use('/upload-profile-photo', uploadRouter);
 app.use('/upload-issue', uploadIssueRouter);
@@ -83,6 +84,7 @@ app.use('/notifications', notificationsRouter);
 app.use('/reported-issues', reportedIssuesRouter);
 app.use('/maintenance', requireRole('admin', 'teaching_staff'), maintenanceRouter);
 app.use('/webhooks/resend', resendWebhookRouter);
+app.use('/clone', cloneRouter);
 app.use('/tracker', trackerRouter);
 
 const port = Number(process.env.PORT || 4000);

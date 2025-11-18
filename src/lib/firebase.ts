@@ -6,6 +6,10 @@ import fs from 'node:fs';
 
 const apps = getApps();
 let projectId = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT;
+const historyProjectId =
+  process.env.HISTORY_FIREBASE_PROJECT_ID ||
+  process.env.SECONDARY_FIREBASE_PROJECT_ID ||
+  projectId;
 const USE_MONGO = (process.env.DATA_STORE || '').toLowerCase() === 'mongo';
 
 // Fallback: derive projectId from ADC JSON if available
@@ -61,6 +65,48 @@ function buildCredential() {
   }
   // 4) Fall back to ADC
   return applicationDefault();
+}
+
+function buildCredentialForPrefix(prefix: string) {
+  const json = process.env[`${prefix}_FIREBASE_CREDENTIALS_JSON`];
+  if (json) {
+    try {
+      const decoded = json.trim().startsWith('{') ? json : Buffer.from(json, 'base64').toString('utf8');
+      const parsed = JSON.parse(decoded);
+      return cert({
+        projectId: parsed.project_id,
+        clientEmail: parsed.client_email,
+        privateKey: parsed.private_key,
+      });
+    } catch {
+      // fallthrough
+    }
+  }
+  if (
+    process.env[`${prefix}_FIREBASE_PRIVATE_KEY`] &&
+    process.env[`${prefix}_FIREBASE_CLIENT_EMAIL`] &&
+    process.env[`${prefix}_FIREBASE_PROJECT_ID`]
+  ) {
+    return cert({
+      projectId: process.env[`${prefix}_FIREBASE_PROJECT_ID`]! as string,
+      clientEmail: process.env[`${prefix}_FIREBASE_CLIENT_EMAIL`]! as string,
+      privateKey: process.env[`${prefix}_FIREBASE_PRIVATE_KEY`]!.replace(/\\n/g, '\n'),
+    });
+  }
+  if (process.env[`${prefix}_GOOGLE_APPLICATION_CREDENTIALS`]) {
+    try {
+      const raw = fs.readFileSync(process.env[`${prefix}_GOOGLE_APPLICATION_CREDENTIALS`]!, 'utf8');
+      const parsed = JSON.parse(raw);
+      return cert({
+        projectId: parsed.project_id,
+        clientEmail: parsed.client_email,
+        privateKey: parsed.private_key,
+      });
+    } catch {
+      // fallthrough
+    }
+  }
+  return buildCredential();
 }
 
 export const firebaseApp = USE_MONGO
@@ -265,6 +311,42 @@ export const rtdb = (() => {
   } catch {
     // Minimal shim to avoid crashes if credentials are missing in local dev
     return ({ ref: (_path: string = '/') => ({ set: async (_value: any) => {}, update: async (_: any) => {} }) } as any);
+  }
+})();
+
+const historyDbUrl = process.env.HISTORY_FIREBASE_DATABASE_URL || process.env.SECONDARY_FIREBASE_DATABASE_URL;
+
+export const historyRtdb = (() => {
+  if (!historyDbUrl) return null;
+  try {
+    const appName = 'history-rtdb';
+    const appsNow = getApps();
+    let historyApp = appsNow.find((app) => app.name === appName);
+    if (!historyApp) {
+      const credential =
+        process.env.HISTORY_FIREBASE_CREDENTIALS_JSON ||
+        process.env.HISTORY_FIREBASE_PRIVATE_KEY ||
+        process.env.HISTORY_GOOGLE_APPLICATION_CREDENTIALS
+          ? buildCredentialForPrefix('HISTORY')
+          : buildCredential();
+      historyApp = initializeApp(
+        {
+          credential,
+          ...(historyProjectId ? { projectId: historyProjectId } : {}),
+          databaseURL: historyDbUrl,
+        },
+        appName
+      );
+    }
+    const db = getDatabase(historyApp);
+    try {
+      const canUpdate = typeof (db as any).ref === 'function' && typeof (db as any).ref('/').update === 'function';
+      console.log('[history-rtdb] initialized:', canUpdate ? 'admin' : 'limited');
+    } catch {}
+    return db;
+  } catch (err) {
+    console.warn('[history-rtdb] failed to initialize:', (err as any)?.message || err);
+    return null;
   }
 })();
 

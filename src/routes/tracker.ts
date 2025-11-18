@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, rtdb } from '../lib/firebase.js';
+import { db, rtdb, historyRtdb } from '../lib/firebase.js';
 
 const router = Router();
 
@@ -35,6 +35,23 @@ function fromNmeaDdmm(value: number, kind: 'lat' | 'lng'): number | undefined {
     if (decimal > 180) return undefined;
   }
   return signed;
+}
+
+async function writeRtdbBatch(target: any, updates: Record<string, any>) {
+  if (!target || typeof target.ref !== 'function') return;
+  const entries = Object.entries(updates);
+  if (!entries.length) return;
+  const rootRef = target.ref('/');
+  if (rootRef && typeof rootRef.update === 'function') {
+    try {
+      await target.ref().update(updates);
+      return;
+    } catch {
+      // fallthrough to per-path sets
+    }
+  }
+  const ops = entries.map(([path, value]) => target.ref(path).set(value));
+  await Promise.all(ops);
 }
 
 router.post('/', async (req, res) => {
@@ -163,6 +180,7 @@ router.post('/', async (req, res) => {
     const tsKey = String(ts);
     // Build RTDB multi-location updates
     const updates: Record<string, any> = {};
+    const historyUpdates: Record<string, any> = {};
 
     // Device-scoped writes
     const deviceBase = `/tracker/devices/${id}`;
@@ -189,20 +207,20 @@ router.post('/', async (req, res) => {
       updates[`/tracker/bikesByName/${nameKey}/last`] = enriched;
     }
 
-    // Perform bulk update with fallback to per-path sets
-    try {
-      const rootRef: any = (rtdb as any).ref ? (rtdb as any).ref('/') : null;
-      if (rootRef && typeof rootRef.update === 'function') {
-        await (rtdb as any).ref().update(updates);
-      } else {
-        const ops = Object.entries(updates).map(([p, v]) => (rtdb as any).ref(p).set(v));
-        await Promise.all(ops);
-      }
-    } catch {
-      // Fallback: attempt per-path set if bulk update fails
-      const ops = Object.entries(updates).map(([p, v]) => (rtdb as any).ref(p).set(v));
-      await Promise.all(ops);
+    const historyPayload = {
+      ...telemetry,
+      deviceId: id,
+      bikeId: bike?.id ?? null,
+      bikeName: bike?.name ?? null,
+    };
+    historyUpdates[`/trackerHistory/feed/${tsKey}_${id}`] = historyPayload;
+    historyUpdates[`/trackerHistory/devices/${id}/${tsKey}`] = historyPayload;
+    if (bike?.id) {
+      historyUpdates[`/trackerHistory/bikes/${bike.id}/${tsKey}`] = historyPayload;
     }
+
+    await writeRtdbBatch(rtdb, updates);
+    await writeRtdbBatch(historyRtdb, historyUpdates);
 
     return res.status(200).json({ status: 'success', message: 'Location data received', deviceId: id, bikeId: bike?.id ?? null });
   } catch (e: any) {
@@ -279,6 +297,61 @@ router.get('/resolve', async (req, res) => {
     } catch {}
     if (!bike) return res.json({ status: 'success', found: false });
     return res.json({ status: 'success', found: true, bike: { id: bike.id, name: bike.name ?? null } });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'internal error' });
+  }
+});
+
+// Clone legacy GPS Tracking tree to the secondary RTDB cluster
+router.post('/clone-gps-tracking', async (req, res) => {
+  try {
+    if (!historyRtdb) {
+      return res.status(503).json({ status: 'error', message: 'history RTDB not configured' });
+    }
+
+    const normalizePath = (path?: string, fallback: string = '/GPS Tracking') => {
+      if (!path || typeof path !== 'string' || !path.trim()) return fallback;
+      const trimmed = path.trim();
+      return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    };
+
+    const sourcePath = normalizePath((req.body as any)?.sourcePath ?? (req.query as any)?.sourcePath);
+    const targetPath = normalizePath((req.body as any)?.targetPath ?? (req.query as any)?.targetPath, sourcePath);
+
+    const sourceRef: any = (rtdb as any).ref ? (rtdb as any).ref(sourcePath) : null;
+    if (!sourceRef) return res.status(500).json({ status: 'error', message: 'source RTDB unavailable' });
+
+    let snap: any = null;
+    if (typeof sourceRef.get === 'function') {
+      snap = await sourceRef.get();
+    } else if (typeof sourceRef.once === 'function') {
+      snap = await new Promise((resolve, reject) => sourceRef.once('value', resolve, reject));
+    } else {
+      return res.status(500).json({ status: 'error', message: 'read not supported in source RTDB' });
+    }
+
+    const data = snap?.val?.() ?? snap?.val ?? null;
+    if (data === null || data === undefined) {
+      return res.status(404).json({ status: 'error', message: 'no data found at source path', sourcePath });
+    }
+
+    const targetRef: any = (historyRtdb as any).ref ? (historyRtdb as any).ref(targetPath) : null;
+    if (!targetRef) return res.status(500).json({ status: 'error', message: 'target RTDB unavailable' });
+
+    if (typeof targetRef.set === 'function') {
+      await targetRef.set(data);
+    } else if (typeof targetRef.update === 'function') {
+      await targetRef.update(data);
+    } else {
+      return res.status(500).json({ status: 'error', message: 'write not supported in target RTDB' });
+    }
+
+    return res.json({
+      status: 'success',
+      message: 'GPS tracking data cloned',
+      sourcePath,
+      targetPath,
+    });
   } catch (e: any) {
     return res.status(500).json({ status: 'error', message: e?.message || 'internal error' });
   }
